@@ -63,21 +63,18 @@ func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
 
 		// Write to DB
 		attID := ""
-		{
-			sql, params := insertSQL("attachments", H{
-				"created_at":     entry.Date,
-				"updated_at":     entry.Date,
-				"file_name":      af.Name,
-				"file_size":      af.Size,
-				"mime_type":      "audio/mpeg",
-				"media_type":     "audio",
-				"file_extension": "mp3",
-				"user_id":        entry.Author.UID,
-				"artist":         af.Artist,
-				"title":          af.Title,
-			})
-			mustbe.OK(tx.QueryRow(sql+" returning uid", params...).Scan(&attID))
-		}
+		mustbe.OK(insertAndReturn(db, "attachments", H{
+			"created_at":     entry.Date,
+			"updated_at":     entry.Date,
+			"file_name":      af.Name,
+			"file_size":      af.Size,
+			"mime_type":      "audio/mpeg",
+			"media_type":     "audio",
+			"file_extension": "mp3",
+			"user_id":        entry.Author.UID,
+			"artist":         af.Artist,
+			"title":          af.Title,
+		}, "returning uid").Scan(&attID))
 
 		if conf.AttDir != "" { // Save to disk
 			dName := filepath.Join(conf.AttDir, "attachments")

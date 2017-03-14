@@ -105,6 +105,16 @@ func insertSQL(tableName string, vals H) (query string, params []interface{}) {
 	return
 }
 
+func insertRecord(db dbQ, tableName string, vals H) (sql.Result, error) {
+	sql, params := insertSQL(tableName, vals)
+	return db.Exec(sql, params...)
+}
+
+func insertAndReturn(db dbQ, tableName string, vals H, tail string) *sql.Row {
+	sql, params := insertSQL(tableName, vals)
+	return db.QueryRow(sql+" "+tail, params...)
+}
+
 var nonASCIIRe = regexp.MustCompile(`[^\x20-\x7f]`)
 
 // Get cross-browser Content-Disposition header for attachment

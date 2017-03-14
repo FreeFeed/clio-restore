@@ -85,37 +85,24 @@ func restoreEntry(entry *clio.Entry) {
 	}
 
 	postUID := ""
-
-	mustbe.OK(tx.QueryRow(
-		`insert into posts (
-			body,
-			user_id,
-			created_at,
-			updated_at,
-			bumped_at,
-			comments_disabled,
-			destination_feed_ids
-		) values ($1, $2, $3, $4, $5, $6, $7) returning uid`,
-		entry.Body,
-		entry.Author.UID,
-		createdAt,
-		updatedAt,
-		updatedAt,
-		entry.Author.DisableComments,
-		pq.Array([]int{entry.Author.Feeds.Posts.ID}),
-	).Scan(&postUID))
+	mustbe.OK(insertAndReturn(tx, "posts", H{
+		"body":                 entry.Body,
+		"user_id":              entry.Author.UID,
+		"created_at":           createdAt,
+		"updated_at":           updatedAt,
+		"bumped_at":            updatedAt,
+		"comments_disabled":    entry.Author.DisableComments,
+		"destination_feed_ids": pq.Array([]int{entry.Author.Feeds.Posts.ID}),
+	}, "returning uid").Scan(&postUID))
 
 	infoLog.Println("created post with UID", postUID)
 
 	// register old post name
-	mustbe.OKVal(tx.Exec(
-		`insert into archive_post_names (old_post_name, post_id) values ($1, $2)`,
-		entry.Name, postUID,
-	))
+	mustbe.OKVal(insertRecord(tx, "archive_posts", H{"old_post_name": entry.Name, "post_id": postUID}))
 
 	// register via
 	if viaID := getViaID(entry.Via); viaID != 0 {
-		mustbe.OKVal(tx.Exec(`insert into archive_posts_via (via_id, post_id) values ($1, $2)`, viaID, postUID))
+		mustbe.OKVal(insertRecord(tx, "archive_posts_via", H{"via_id": viaID, "post_id": postUID}))
 	}
 
 	// atach attachments
@@ -178,25 +165,25 @@ func likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 	restoredVisible = like.Author.RestoreCommentsAndLikes
 	if restoredVisible {
 		// like is visible
-		mustbe.OKVal(tx.Exec(
-			`insert into likes 
-				(post_id, user_id, created_at) values ($1, $2, $3, $4, $5, $6)`,
-			postUID, like.Author.UID, like.Date,
-		))
+		mustbe.OKVal(insertRecord(tx, "likes", H{
+			"post_id":    postUID,
+			"user_id":    like.Author.UID,
+			"created_at": like.Date,
+		}))
 	} else {
 		// like is hidden
 		if like.Author.UID != "" {
-			mustbe.OKVal(tx.Exec(
-				`insert into hidden_likes 
-					(post_id, user_id, date) values ($1, $2, $3)`,
-				postUID, like.Author.UID, like.Date,
-			))
+			mustbe.OKVal(insertRecord(tx, "hidden_likes", H{
+				"post_id": postUID,
+				"user_id": like.Author.UID,
+				"date":    like.Date,
+			}))
 		} else {
-			mustbe.OKVal(tx.Exec(
-				`insert into hidden_likes 
-					(post_id, old_username, date) values ($1, $2, $3)`,
-				postUID, like.Author.OldUserName, like.Date,
-			))
+			mustbe.OKVal(insertRecord(tx, "hidden_likes", H{
+				"post_id":      postUID,
+				"old_username": like.Author.OldUserName,
+				"date":         like.Date,
+			}))
 		}
 	}
 	return
@@ -207,54 +194,38 @@ func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comm
 		comment.Author.OldUserName == postAuthor.OldUserName && comment.Author.RestoreSelfComments
 	if restoredVisible {
 		// comment is visible
-		mustbe.OKVal(tx.Exec(
-			`insert into comments (
-					post_id,
-					body,
-					user_id,
-					created_at,
-					updated_at,
-					hide_type
-				) values ($1, $2, $3, $4, $5, $6)`,
-			postUID,
-			comment.Body,
-			comment.Author.UID,
-			comment.Date,
-			comment.Date,
-			commentTypeVisible,
-		))
+		mustbe.OKVal(insertRecord(tx, "comments", H{
+			"post_id":    postUID,
+			"body":       comment.Body,
+			"user_id":    comment.Author.UID,
+			"created_at": comment.Date,
+			"updated_at": comment.Date,
+			"hide_type":  commentTypeVisible,
+		}))
 	} else {
 		// comment is hidden
 		commentID := ""
-		mustbe.OK(tx.QueryRow(
-			`insert into comments (
-					post_id,
-					body,
-					user_id,
-					created_at,
-					updated_at,
-					hide_type
-				) values ($1, $2, $3, $4, $5, $6) returning uid`,
-			postUID,
-			hiddenCommentBody,
-			nil,
-			comment.Date,
-			comment.Date,
-			commentTypeHidden,
-		).Scan(&commentID))
+		mustbe.OK(insertAndReturn(tx, "comments", H{
+			"post_id":    postUID,
+			"body":       hiddenCommentBody,
+			"user_id":    nil,
+			"created_at": comment.Date,
+			"updated_at": comment.Date,
+			"hide_type":  commentTypeHidden,
+		}, "returning uid").Scan(&commentID))
 
 		if comment.Author.UID != "" {
-			mustbe.OKVal(tx.Exec(
-				`insert into hidden_comments 
-					(comment_id, body, user_id) values ($1, $2, $3)`,
-				commentID, comment.Body, comment.Author.UID,
-			))
+			mustbe.OKVal(insertRecord(tx, "hidden_comments", H{
+				"comment_id": commentID,
+				"body":       comment.Body,
+				"user_id":    comment.Author.UID,
+			}))
 		} else {
-			mustbe.OKVal(tx.Exec(
-				`insert into hidden_comments 
-					(comment_id, body, old_username) values ($1, $2, $3)`,
-				commentID, comment.Body, comment.Author.OldUserName,
-			))
+			mustbe.OKVal(insertRecord(tx, "hidden_comments", H{
+				"comment_id":   commentID,
+				"body":         comment.Body,
+				"old_username": comment.Author.OldUserName,
+			}))
 		}
 	}
 	return
