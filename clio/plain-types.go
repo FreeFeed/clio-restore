@@ -37,6 +37,11 @@ type entryJSON struct {
 		URL  string `json:"url"`
 		Link string `json:"link"`
 	} `json:"thumbnails"`
+	Files []*struct {
+		URL  string `json:"url"`
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"files"`
 	Comments []*Comment `json:"comments"`
 	Likes    []*Like    `json:"likes"`
 }

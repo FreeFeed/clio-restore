@@ -6,13 +6,25 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 
 	"github.com/FreeFeed/clio-restore/account"
 	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
+	"github.com/kelseyhightower/envconfig"
 	"github.com/lib/pq"
 )
+
+// Config holds program configuration taken from env. vars
+type Config struct {
+	Db       string `required:"true" desc:"Database connection string"`
+	AttDir   string `desc:"Directory to store attachment files (if S3 is not used)"`
+	MP3Zip   string `desc:"Path to the zip-archive with mp3 files"`
+	S3Bucket string `desc:"S3 bucket name for store attachments (if S3 is used)"`
+}
 
 // Globals
 var (
@@ -20,8 +32,12 @@ var (
 	errorLog = log.New(os.Stdout, "ERROR ", log.LstdFlags)
 	fatalLog = log.New(os.Stdout, "FATAL ", log.LstdFlags)
 
+	conf = new(Config)
+
 	db       *sql.DB
+	s3Client *s3.S3
 	zipFiles []*zip.File
+	mp3Files = make(map[string]*zip.File) // map ID -> *zip.File
 
 	acc          *account.Account // current user/archive information
 	viaToRestore []string         // via sources (URLs) to restore
@@ -30,34 +46,50 @@ var (
 func main() {
 	defer mustbe.Catched(func(err error) { fatalLog.Println(err) })
 
-	const dbEnv = "FRF_DB"
-
 	if len(os.Args) != 2 {
 		fmt.Fprintln(os.Stderr, "Usage: clio-restore clio-archive.zip")
-		fmt.Fprintln(os.Stderr, "Put database connection string into the "+dbEnv+" environment variable")
-		fmt.Fprintln(os.Stderr, "See https://godoc.org/github.com/lib/pq for the connection string format")
+		fmt.Fprintln(os.Stderr, "")
+		envconfig.Usage("frf", conf)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Also you should set all variables required by AWS.")
 		os.Exit(1)
 	}
 
+	mustbe.OK(envconfig.Process("frf", conf))
+
 	archFile := os.Args[1]
-	dbConnString := os.Getenv(dbEnv)
-
-	{ // Connect to DB
-		if dbConnString == "" {
-			mustbe.OK(errors.Errorf("%s environment variable not found", dbEnv))
-		}
-
-		var err error
-		db, err = sql.Open("postgres", dbConnString)
-		mustbe.OK(errors.Annotate(err, "cannot open DB"))
-		mustbe.OK(errors.Annotate(db.Ping(), "cannot connect to DB"))
-	}
 
 	{ // Open zip
 		archZip, err := zip.OpenReader(archFile)
 		mustbe.OK(errors.Annotate(err, "cannot open archive file"))
 		defer archZip.Close()
 		zipFiles = archZip.File
+	}
+
+	if conf.MP3Zip != "" { // Open MP3 zip
+		mp3zip, err := zip.OpenReader(conf.MP3Zip)
+		mustbe.OK(errors.Annotate(err, "cannot open MP3 archive file"))
+		defer mp3zip.Close()
+		mp3Re := regexp.MustCompile(`([0-9a-f]+)\.mp3$`)
+		for _, f := range mp3zip.File {
+			m := mp3Re.FindStringSubmatch(f.Name)
+			if m != nil {
+				mp3Files[m[1]] = f
+			}
+		}
+	}
+
+	if conf.AttDir == "" { // use S3
+		awsSession, err := session.NewSession()
+		mustbe.OK(errors.Annotate(err, "cannot create AWS session"))
+		s3Client = s3.New(awsSession)
+	}
+
+	{ // Connect to DB
+		var err error
+		db, err = sql.Open("postgres", conf.Db)
+		mustbe.OK(errors.Annotate(err, "cannot open DB"))
+		mustbe.OK(errors.Annotate(db.Ping(), "cannot connect to DB"))
 	}
 
 	account.SetDBConnection(db)
