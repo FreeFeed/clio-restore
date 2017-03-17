@@ -7,9 +7,11 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"runtime/debug"
 
 	"github.com/FreeFeed/clio-restore/account"
 	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/FreeFeed/clio-restore/dbutils"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
@@ -20,10 +22,14 @@ import (
 
 // Config holds program configuration taken from env. vars
 type Config struct {
-	Db       string `required:"true" desc:"Database connection string"`
-	AttDir   string `desc:"Directory to store attachment files (if S3 is not used)"`
+	Db       string `desc:"Database connection string" required:"true"`
+	GM       string `desc:"Path to the GraphicsMagick (gm) executable" required:"true"`
+	GifSicle string `desc:"Path to the gifsicle executable" required:"true"`
+	SRGB     string `desc:"Path to the sRGB ICM profile" required:"true"`
+	AttDir   string `desc:"Directory to store attachments (S3 is not used if setted)"`
+	S3Bucket string `desc:"S3 bucket name to store attachments (required if S3 is used)"`
 	MP3Zip   string `desc:"Path to the zip-archive with mp3 files"`
-	S3Bucket string `desc:"S3 bucket name for store attachments (if S3 is used)"`
+	AttURL   string `desc:"Attachments root url" default:"https://media.freefeed.net"`
 }
 
 // Globals
@@ -34,17 +40,21 @@ var (
 
 	conf = new(Config)
 
-	db       *sql.DB
-	s3Client *s3.S3
-	zipFiles []*zip.File
-	mp3Files = make(map[string]*zip.File) // map ID -> *zip.File
+	db         *sql.DB
+	s3Client   *s3.S3
+	zipFiles   []*zip.File
+	mp3Files   map[string]*zip.File      // map ID -> *zip.File
+	imageFiles map[string]localImageFile // map ID -> *zip.File
 
 	acc          *account.Account // current user/archive information
 	viaToRestore []string         // via sources (URLs) to restore
 )
 
 func main() {
-	defer mustbe.Catched(func(err error) { fatalLog.Println(err) })
+	defer mustbe.Catched(func(err error) {
+		fatalLog.Println(err)
+		debug.PrintStack()
+	})
 
 	if len(os.Args) != 2 {
 		fmt.Fprintln(os.Stderr, "Usage: clio-restore clio-archive.zip")
@@ -57,6 +67,15 @@ func main() {
 
 	mustbe.OK(envconfig.Process("frf", conf))
 
+	if conf.AttDir == "" && conf.S3Bucket == "" {
+		fmt.Fprintln(os.Stderr, "Usage: clio-restore clio-archive.zip")
+		fmt.Fprintln(os.Stderr, "")
+		envconfig.Usage("frf", conf)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Also you should set all variables required by AWS.")
+		os.Exit(1)
+	}
+
 	archFile := os.Args[1]
 
 	{ // Open zip
@@ -66,6 +85,7 @@ func main() {
 		zipFiles = archZip.File
 	}
 
+	mp3Files = make(map[string]*zip.File)
 	if conf.MP3Zip != "" { // Open MP3 zip
 		mp3zip, err := zip.OpenReader(conf.MP3Zip)
 		mustbe.OK(errors.Annotate(err, "cannot open MP3 archive file"))
@@ -78,6 +98,8 @@ func main() {
 			}
 		}
 	}
+
+	imageFiles = readImageFiles(zipFiles)
 
 	if conf.AttDir == "" { // use S3
 		awsSession, err := session.NewSession()
@@ -114,7 +136,7 @@ func main() {
 			"select via_sources, via_restore from archives where old_username = $1",
 			oldUserName,
 		).Scan(
-			&JSONSqlScanner{&viaStats},
+			dbutils.JSONVal(&viaStats),
 			(*pq.StringArray)(&viaToRestore),
 		)
 		mustbe.OK(errors.Annotate(err, "error fetching via sources"))
@@ -144,14 +166,14 @@ func main() {
 			continue
 		}
 
+		if len(entry.Thumbnails) == 0 {
+			// continue
+		}
+
 		processedPosts++
 
 		infoLog.Printf("Processing entry %s [%d/%d]", entry.Name, processedPosts, postsToRestore)
 
 		restoreEntry(entry)
-
-		if processedPosts > 103 {
-			break
-		}
 	}
 }

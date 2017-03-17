@@ -7,15 +7,16 @@ import (
 
 	"github.com/FreeFeed/clio-restore/account"
 	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/FreeFeed/clio-restore/dbutils"
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
 	"github.com/lib/pq"
+	"github.com/satori/go.uuid"
 )
 
 var (
-	feedInfoRe   = regexp.MustCompile(`^[a-z0-9-]+/_json/data/feedinfo\.js$`)
-	entryRe      = regexp.MustCompile(`^[a-z0-9-]+/_json/data/entries/[0-9a-f]{8}\.js$`)
-	ffMediaURLRe = regexp.MustCompile(`^http://(m\.friendfeed-media\.com|i\.friendfeed\.com)/`)
+	feedInfoRe = regexp.MustCompile(`^[a-z0-9-]+/_json/data/feedinfo\.js$`)
+	entryRe    = regexp.MustCompile(`^[a-z0-9-]+/_json/data/entries/[0-9a-f]{8}\.js$`)
 )
 
 var tx *sql.Tx
@@ -73,8 +74,6 @@ func restoreEntry(entry *clio.Entry) {
 	attachUIDs = append(attachUIDs, restoreThumbnails(entry, tx)...)
 	attachUIDs = append(attachUIDs, restoreFiles(entry, tx)...)
 
-	// TODO file attachments
-
 	// create post
 	createdAt := entry.Date
 	updatedAt := createdAt
@@ -84,8 +83,9 @@ func restoreEntry(entry *clio.Entry) {
 		}
 	}
 
-	postUID := ""
-	mustbe.OK(insertAndReturn(tx, "posts", H{
+	postUID := uuid.NewV4().String()
+	dbutils.MustInsert(tx, "posts", dbutils.H{
+		"uid":                  postUID,
 		"body":                 entry.Body,
 		"user_id":              entry.Author.UID,
 		"created_at":           createdAt,
@@ -93,27 +93,31 @@ func restoreEntry(entry *clio.Entry) {
 		"bumped_at":            updatedAt,
 		"comments_disabled":    entry.Author.DisableComments,
 		"destination_feed_ids": pq.Array([]int{entry.Author.Feeds.Posts.ID}),
-	}, "returning uid").Scan(&postUID))
+	})
 
 	infoLog.Println("created post with UID", postUID)
 
 	// register old post name
-	mustbe.OKVal(insertRecord(tx, "archive_posts", H{"old_post_name": entry.Name, "post_id": postUID}))
+	dbutils.MustInsert(tx, "archive_post_names", dbutils.H{"old_post_name": entry.Name, "post_id": postUID})
 
 	// register via
 	if viaID := getViaID(entry.Via); viaID != 0 {
-		mustbe.OKVal(insertRecord(tx, "archive_posts_via", H{"via_id": viaID, "post_id": postUID}))
+		dbutils.MustInsert(tx, "archive_posts_via", dbutils.H{"via_id": viaID, "post_id": postUID})
 	}
 
 	// atach attachments
 	if len(attachUIDs) > 0 {
-		var qUIDs []string
-		for _, uid := range attachUIDs {
-			qUIDs = append(qUIDs, pgQuoteString(uid))
-		}
 		mustbe.OKVal(tx.Exec(
-			`update attachments set post_id = $1 where uid in (`+strings.Join(qUIDs, ",")+`)`,
+			`update attachments set 
+				post_id = $1,
+				user_id = $2,
+				created_at = $3,
+				updated_at = $4
+			where uid in (`+strings.Join(dbutils.QuoteStrings(attachUIDs), ",")+`)`,
 			postUID,
+			entry.Author.UID,
+			entry.Date,
+			entry.Date,
 		))
 	}
 
@@ -145,7 +149,7 @@ func restoreEntry(entry *clio.Entry) {
 	{ // update post's feed_ids
 		var ids []string
 		for id := range feedIds {
-			ids = append(ids, pgQuoteString(id))
+			ids = append(ids, dbutils.QuoteString(id))
 		}
 		mustbe.OKVal(tx.Exec(
 			`update posts set feed_ids = (
@@ -165,25 +169,25 @@ func likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 	restoredVisible = like.Author.RestoreCommentsAndLikes
 	if restoredVisible {
 		// like is visible
-		mustbe.OKVal(insertRecord(tx, "likes", H{
+		dbutils.MustInsert(tx, "likes", dbutils.H{
 			"post_id":    postUID,
 			"user_id":    like.Author.UID,
 			"created_at": like.Date,
-		}))
+		})
 	} else {
 		// like is hidden
 		if like.Author.UID != "" {
-			mustbe.OKVal(insertRecord(tx, "hidden_likes", H{
+			dbutils.MustInsert(tx, "hidden_likes", dbutils.H{
 				"post_id": postUID,
 				"user_id": like.Author.UID,
 				"date":    like.Date,
-			}))
+			})
 		} else {
-			mustbe.OKVal(insertRecord(tx, "hidden_likes", H{
+			dbutils.MustInsert(tx, "hidden_likes", dbutils.H{
 				"post_id":      postUID,
 				"old_username": like.Author.OldUserName,
 				"date":         like.Date,
-			}))
+			})
 		}
 	}
 	return
@@ -194,38 +198,39 @@ func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comm
 		comment.Author.OldUserName == postAuthor.OldUserName && comment.Author.RestoreSelfComments
 	if restoredVisible {
 		// comment is visible
-		mustbe.OKVal(insertRecord(tx, "comments", H{
+		dbutils.MustInsert(tx, "comments", dbutils.H{
 			"post_id":    postUID,
 			"body":       comment.Body,
 			"user_id":    comment.Author.UID,
 			"created_at": comment.Date,
 			"updated_at": comment.Date,
 			"hide_type":  commentTypeVisible,
-		}))
+		})
 	} else {
 		// comment is hidden
-		commentID := ""
-		mustbe.OK(insertAndReturn(tx, "comments", H{
+		commentID := uuid.NewV4().String()
+		dbutils.MustInsert(tx, "comments", dbutils.H{
+			"uid":        commentID,
 			"post_id":    postUID,
 			"body":       hiddenCommentBody,
 			"user_id":    nil,
 			"created_at": comment.Date,
 			"updated_at": comment.Date,
 			"hide_type":  commentTypeHidden,
-		}, "returning uid").Scan(&commentID))
+		})
 
 		if comment.Author.UID != "" {
-			mustbe.OKVal(insertRecord(tx, "hidden_comments", H{
+			dbutils.MustInsert(tx, "hidden_comments", dbutils.H{
 				"comment_id": commentID,
 				"body":       comment.Body,
 				"user_id":    comment.Author.UID,
-			}))
+			})
 		} else {
-			mustbe.OKVal(insertRecord(tx, "hidden_comments", H{
+			dbutils.MustInsert(tx, "hidden_comments", dbutils.H{
 				"comment_id":   commentID,
 				"body":         comment.Body,
 				"old_username": comment.Author.OldUserName,
-			}))
+			})
 		}
 	}
 	return

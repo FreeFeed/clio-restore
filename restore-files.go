@@ -2,18 +2,15 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"io"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"regexp"
 
 	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/FreeFeed/clio-restore/dbutils"
 	"github.com/ascherkus/go-id3/src/id3"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
-	"github.com/juju/errors"
+	"github.com/satori/go.uuid"
 )
 
 var fileIDRe = regexp.MustCompile(`[0-9a-f]+$`)
@@ -32,7 +29,7 @@ func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
 		if f.Type == "audio/mpeg" {
 			m := fileIDRe.FindStringSubmatch(f.URL)
 			if m != nil {
-				id := m[1]
+				id := m[0]
 				if zf, ok := mp3Files[id]; ok {
 					foundFiles = append(foundFiles, &audioFile{zipFile: zf, Name: f.Name})
 				}
@@ -61,9 +58,18 @@ func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
 			af.Artist = meta.Artist
 		}()
 
+		attID := uuid.NewV4().String()
+
+		// We must read file into memory because AWS required io.ReadSeeker
+		// and zipFile.Open returns io.ReadCloser
+		r := mustbe.OKVal(af.zipFile.Open()).(io.ReadCloser)
+		body := mustbe.OKVal(ioutil.ReadAll(r)).([]byte)
+		r.Close()
+		storeAttachment(body, "attachments/"+attID+".mp3", af.Name, "audio/mpeg")
+
 		// Write to DB
-		attID := ""
-		mustbe.OK(insertAndReturn(db, "attachments", H{
+		dbutils.MustInsert(db, "attachments", dbutils.H{
+			"uid":            attID,
 			"created_at":     entry.Date,
 			"updated_at":     entry.Date,
 			"file_name":      af.Name,
@@ -74,52 +80,7 @@ func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
 			"user_id":        entry.Author.UID,
 			"artist":         af.Artist,
 			"title":          af.Title,
-		}, "returning uid").Scan(&attID))
-
-		if conf.AttDir != "" { // Save to disk
-			dName := filepath.Join(conf.AttDir, "attachments")
-			fName := filepath.Join(dName, attID+".mp3")
-
-			mustbe.OK(func() error {
-				if err := os.MkdirAll(dName, 0777); err != nil {
-					return errors.Annotatef(err, "Cannot create directory %s", dName)
-				}
-				f, err := os.Create(fName)
-				if err != nil {
-					return errors.Annotatef(err, "Cannot open file %s to write attachment", fName)
-				}
-				defer f.Close()
-
-				r, err := af.zipFile.Open()
-				if err != nil {
-					return errors.Annotatef(err, "Cannot open zip entry %s", af.zipFile.Name)
-				}
-				defer r.Close()
-
-				_, err = io.Copy(f, r)
-				if err != nil {
-					return errors.Annotatef(err, "Cannot copy data %s -> %s", af.zipFile.Name, fName)
-				}
-				return nil
-			}())
-
-		} else { // Upload to S3
-			// We must read file into memory because AWS required io.ReadSeeker
-			// and zipFile.Open returns io.ReadCloser
-			r := mustbe.OKVal(af.zipFile.Open()).(io.ReadCloser)
-			body := mustbe.OKVal(ioutil.ReadAll(r)).([]byte)
-			r.Close()
-
-			mustbe.OKVal(s3Client.PutObject(
-				new(s3.PutObjectInput).
-					SetBody(bytes.NewReader(body)).
-					SetBucket(conf.S3Bucket).
-					SetKey("attachments/" + attID + ".mp3").
-					SetContentType("audio/mpeg").
-					SetACL("public-read").
-					SetContentDisposition(contentDispositionString("inline", af.Name)),
-			))
-		}
+		})
 
 		resUIDs = append(resUIDs, attID)
 	}
