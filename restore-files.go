@@ -4,16 +4,13 @@ import (
 	"archive/zip"
 	"io"
 	"io/ioutil"
-	"regexp"
 
 	"github.com/FreeFeed/clio-restore/clio"
-	"github.com/FreeFeed/clio-restore/dbutils"
+	"github.com/FreeFeed/clio-restore/dbutil"
 	"github.com/ascherkus/go-id3/src/id3"
 	"github.com/davidmz/mustbe"
 	"github.com/satori/go.uuid"
 )
-
-var fileIDRe = regexp.MustCompile(`[0-9a-f]+$`)
 
 type audioFile struct {
 	zipFile *zip.File
@@ -23,14 +20,14 @@ type audioFile struct {
 	Title   string
 }
 
-func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
+func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
 	var foundFiles []*audioFile
 	for _, f := range entry.Files {
 		if f.Type == "audio/mpeg" {
 			m := fileIDRe.FindStringSubmatch(f.URL)
 			if m != nil {
 				id := m[0]
-				if zf, ok := mp3Files[id]; ok {
+				if zf, ok := a.Mp3Files[id]; ok {
 					foundFiles = append(foundFiles, &audioFile{zipFile: zf, Name: f.Name})
 				}
 			}
@@ -65,10 +62,10 @@ func restoreFiles(entry *clio.Entry, db dbQ) (resUIDs []string) {
 		r := mustbe.OKVal(af.zipFile.Open()).(io.ReadCloser)
 		body := mustbe.OKVal(ioutil.ReadAll(r)).([]byte)
 		r.Close()
-		storeAttachment(body, "attachments/"+attID+".mp3", af.Name, "audio/mpeg")
+		a.storeAttachment(body, "attachments/"+attID+".mp3", af.Name, "audio/mpeg")
 
 		// Write to DB
-		dbutils.MustInsert(db, "attachments", dbutils.H{
+		dbutil.MustInsert(a.Tx, "attachments", dbutil.H{
 			"uid":            attID,
 			"created_at":     entry.Date,
 			"updated_at":     entry.Date,

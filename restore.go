@@ -2,55 +2,20 @@ package main
 
 import (
 	"database/sql"
-	"regexp"
 	"strings"
 
 	"github.com/FreeFeed/clio-restore/account"
 	"github.com/FreeFeed/clio-restore/clio"
-	"github.com/FreeFeed/clio-restore/dbutils"
+	"github.com/FreeFeed/clio-restore/dbutil"
 	"github.com/davidmz/mustbe"
-	"github.com/juju/errors"
 	"github.com/lib/pq"
 	"github.com/satori/go.uuid"
 )
 
-var (
-	feedInfoRe = regexp.MustCompile(`^[a-z0-9-]+/_json/data/feedinfo\.js$`)
-	entryRe    = regexp.MustCompile(`^[a-z0-9-]+/_json/data/entries/[0-9a-f]{8}\.js$`)
-)
-
-var tx *sql.Tx
-
-func getArchiveOwnerName() (string, error) {
-	// Looking for feedinfo.js in files
-	for _, f := range zipFiles {
-		if feedInfoRe.MatchString(f.Name) {
-			user := new(clio.UserJSON)
-			if err := readZipObject(f, user); err != nil {
-				return "", err
-			}
-			if user.Type != "user" {
-				return "", errors.Errorf("@%s is not a user (%s)", user.UserName, user.Type)
-			}
-			return user.UserName, nil
-		}
-	}
-	return "", errors.New("cannot find feedinfo.js")
-}
-
-func isViaAllowed(viaURL string) bool {
-	for _, u := range viaToRestore {
-		if u == viaURL {
-			return true
-		}
-	}
-	return false
-}
-
-func restoreEntry(entry *clio.Entry) {
+func (a *App) restoreEntry(entry *clio.Entry) {
 	// check if entry already imported
 	alreadyExists := false
-	mustbe.OK(db.QueryRow(
+	mustbe.OK(a.DB.QueryRow(
 		`select exists(select 1 from archive_post_names where old_post_name = $1)`,
 		entry.Name,
 	).Scan(&alreadyExists))
@@ -60,19 +25,21 @@ func restoreEntry(entry *clio.Entry) {
 		return
 	}
 
-	tx = mustbe.OKVal(db.Begin()).(*sql.Tx)
+	a.Tx = mustbe.OKVal(a.DB.Begin()).(*sql.Tx)
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			a.Tx.Rollback()
+			a.Tx = nil
 			panic(p)
 		}
-		tx.Commit()
+		a.Tx.Commit()
+		a.Tx = nil
 	}()
 
 	// thumbnails & files
 	var attachUIDs []string
-	attachUIDs = append(attachUIDs, restoreThumbnails(entry, tx)...)
-	attachUIDs = append(attachUIDs, restoreFiles(entry, tx)...)
+	attachUIDs = append(attachUIDs, a.restoreThumbnails(entry)...)
+	attachUIDs = append(attachUIDs, a.restoreFiles(entry)...)
 
 	// create post
 	createdAt := entry.Date
@@ -84,7 +51,7 @@ func restoreEntry(entry *clio.Entry) {
 	}
 
 	postUID := uuid.NewV4().String()
-	dbutils.MustInsert(tx, "posts", dbutils.H{
+	dbutil.MustInsert(a.Tx, "posts", dbutil.H{
 		"uid":                  postUID,
 		"body":                 entry.Body,
 		"user_id":              entry.Author.UID,
@@ -98,22 +65,22 @@ func restoreEntry(entry *clio.Entry) {
 	infoLog.Println("created post with UID", postUID)
 
 	// register old post name
-	dbutils.MustInsert(tx, "archive_post_names", dbutils.H{"old_post_name": entry.Name, "post_id": postUID})
+	dbutil.MustInsert(a.Tx, "archive_post_names", dbutil.H{"old_post_name": entry.Name, "post_id": postUID})
 
 	// register via
-	if viaID := getViaID(entry.Via); viaID != 0 {
-		dbutils.MustInsert(tx, "archive_posts_via", dbutils.H{"via_id": viaID, "post_id": postUID})
+	if viaID := a.getViaID(entry.Via); viaID != 0 {
+		dbutil.MustInsert(a.Tx, "archive_posts_via", dbutil.H{"via_id": viaID, "post_id": postUID})
 	}
 
 	// atach attachments
 	if len(attachUIDs) > 0 {
-		mustbe.OKVal(tx.Exec(
+		mustbe.OKVal(a.Tx.Exec(
 			`update attachments set 
 				post_id = $1,
 				user_id = $2,
 				created_at = $3,
 				updated_at = $4
-			where uid in (`+strings.Join(dbutils.QuoteStrings(attachUIDs), ",")+`)`,
+			where uid in (`+strings.Join(dbutil.QuoteStrings(attachUIDs), ",")+`)`,
 			postUID,
 			entry.Author.UID,
 			entry.Date,
@@ -121,7 +88,7 @@ func restoreEntry(entry *clio.Entry) {
 		))
 	}
 
-	incrementUserStat(entry.Author, statPosts)
+	a.incrementUserStat(entry.Author, statPosts)
 
 	// post feed_ids - all UIDs of post's feeds
 	feedIds := make(map[string]bool)
@@ -130,18 +97,18 @@ func restoreEntry(entry *clio.Entry) {
 	// add comments
 	infoLog.Println("adding comments")
 	for _, c := range entry.Comments {
-		if commentPost(postUID, entry.Author, c) {
+		if a.commentPost(postUID, entry.Author, c) {
 			feedIds[c.Author.Feeds.Comments.UID] = true
-			incrementUserStat(c.Author, statComments)
+			a.incrementUserStat(c.Author, statComments)
 		}
 	}
 
 	// add likes
 	infoLog.Println("adding likes")
 	for _, l := range entry.Likes {
-		if likePost(postUID, l) {
+		if a.likePost(postUID, l) {
 			feedIds[l.Author.Feeds.Likes.UID] = true
-			incrementUserStat(l.Author, statLikes)
+			a.incrementUserStat(l.Author, statLikes)
 		}
 	}
 
@@ -149,9 +116,9 @@ func restoreEntry(entry *clio.Entry) {
 	{ // update post's feed_ids
 		var ids []string
 		for id := range feedIds {
-			ids = append(ids, dbutils.QuoteString(id))
+			ids = append(ids, dbutil.QuoteString(id))
 		}
-		mustbe.OKVal(tx.Exec(
+		mustbe.OKVal(a.Tx.Exec(
 			`update posts set feed_ids = (
 				select array_agg(distinct f.id) from 
 					feeds f 
@@ -165,11 +132,11 @@ func restoreEntry(entry *clio.Entry) {
 	}
 }
 
-func likePost(postUID string, like *clio.Like) (restoredVisible bool) {
+func (a *App) likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 	restoredVisible = like.Author.RestoreCommentsAndLikes
 	if restoredVisible {
 		// like is visible
-		dbutils.MustInsert(tx, "likes", dbutils.H{
+		dbutil.MustInsert(a.Tx, "likes", dbutil.H{
 			"post_id":    postUID,
 			"user_id":    like.Author.UID,
 			"created_at": like.Date,
@@ -177,13 +144,13 @@ func likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 	} else {
 		// like is hidden
 		if like.Author.UID != "" {
-			dbutils.MustInsert(tx, "hidden_likes", dbutils.H{
+			dbutil.MustInsert(a.Tx, "hidden_likes", dbutil.H{
 				"post_id": postUID,
 				"user_id": like.Author.UID,
 				"date":    like.Date,
 			})
 		} else {
-			dbutils.MustInsert(tx, "hidden_likes", dbutils.H{
+			dbutil.MustInsert(a.Tx, "hidden_likes", dbutil.H{
 				"post_id":      postUID,
 				"old_username": like.Author.OldUserName,
 				"date":         like.Date,
@@ -193,12 +160,12 @@ func likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 	return
 }
 
-func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comment) (restoredVisible bool) {
+func (a *App) commentPost(postUID string, postAuthor *account.Account, comment *clio.Comment) (restoredVisible bool) {
 	restoredVisible = comment.Author.RestoreCommentsAndLikes ||
 		comment.Author.OldUserName == postAuthor.OldUserName && comment.Author.RestoreSelfComments
 	if restoredVisible {
 		// comment is visible
-		dbutils.MustInsert(tx, "comments", dbutils.H{
+		dbutil.MustInsert(a.Tx, "comments", dbutil.H{
 			"post_id":    postUID,
 			"body":       comment.Body,
 			"user_id":    comment.Author.UID,
@@ -209,7 +176,7 @@ func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comm
 	} else {
 		// comment is hidden
 		commentID := uuid.NewV4().String()
-		dbutils.MustInsert(tx, "comments", dbutils.H{
+		dbutil.MustInsert(a.Tx, "comments", dbutil.H{
 			"uid":        commentID,
 			"post_id":    postUID,
 			"body":       hiddenCommentBody,
@@ -220,13 +187,13 @@ func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comm
 		})
 
 		if comment.Author.UID != "" {
-			dbutils.MustInsert(tx, "hidden_comments", dbutils.H{
+			dbutil.MustInsert(a.Tx, "hidden_comments", dbutil.H{
 				"comment_id": commentID,
 				"body":       comment.Body,
 				"user_id":    comment.Author.UID,
 			})
 		} else {
-			dbutils.MustInsert(tx, "hidden_comments", dbutils.H{
+			dbutil.MustInsert(a.Tx, "hidden_comments", dbutil.H{
 				"comment_id":   commentID,
 				"body":         comment.Body,
 				"old_username": comment.Author.OldUserName,
@@ -236,18 +203,10 @@ func commentPost(postUID string, postAuthor *account.Account, comment *clio.Comm
 	return
 }
 
-type statType string
-
-const (
-	statPosts    statType = "posts"
-	statComments statType = "comments"
-	statLikes    statType = "likes"
-)
-
-func incrementUserStat(a *account.Account, t statType) {
+func (a *App) incrementUserStat(acc *account.Account, t statType) {
 	colName := pq.QuoteIdentifier(string(t) + "_count")
-	mustbe.OKVal(tx.Exec(
+	mustbe.OKVal(a.Tx.Exec(
 		`update user_stats set `+colName+` = `+colName+` + 1 where user_id = $1`,
-		a.UID,
+		acc.UID,
 	))
 }

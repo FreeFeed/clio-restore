@@ -11,10 +11,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os/exec"
-
 	"path/filepath"
 
-	"github.com/FreeFeed/clio-restore/dbutils"
+	"github.com/FreeFeed/clio-restore/dbutil"
 	"github.com/davidmz/mustbe"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/satori/go.uuid"
@@ -46,17 +45,17 @@ var supportedFormats = map[string]struct {
 	"gif":  {"image/gif", "gif", "gif"},
 }
 
-func (i imageSizes) setName(uid, ext string) {
+func (i imageSizes) setName(baseURL, uid, ext string) {
 	for t, e := range i {
-		e.URL = conf.AttURL + "/" + e.DirName + "/" + uid + "." + ext
+		e.URL = baseURL + "/" + e.DirName + "/" + uid + "." + ext
 		i[t] = e
 	}
 }
 
 // Create image attachment from the first suitable from provided URLs
-func createImageAttachment(URLs ...string) (uid string, ok bool) {
+func (a *App) createImageAttachment(URLs ...string) (uid string, ok bool) {
 	for _, u := range URLs {
-		uid, ok = processSingleImage(u)
+		uid, ok = a.processSingleImage(u)
 		if ok {
 			break
 		}
@@ -64,15 +63,15 @@ func createImageAttachment(URLs ...string) (uid string, ok bool) {
 	return
 }
 
-func processSingleImage(URL string) (uid string, ok bool) {
+func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 	if ffMediaURLRe.MatchString(URL) {
 		// Local image
 		id := ffMediaURLRe.FindStringSubmatch(URL)[1]
-		if lf, exists := imageFiles[id]; exists {
+		if lf, exists := a.ImageFiles[id]; exists {
 			r := mustbe.OKVal(lf.Open()).(io.ReadCloser)
 			body := mustbe.OKVal(ioutil.ReadAll(r)).([]byte)
 			r.Close()
-			uid, ok = makeAttachment(filepath.Base(lf.Name), body)
+			uid, ok = a.makeAttachment(filepath.Base(lf.Name), body)
 		} else {
 			errorLog.Printf("Local image not found: %s", URL)
 		}
@@ -103,12 +102,12 @@ func processSingleImage(URL string) (uid string, ok bool) {
 		return
 	}
 
-	uid, ok = makeAttachment("", body)
+	uid, ok = a.makeAttachment("", body)
 
 	return
 }
 
-func makeAttachment(name string, body []byte) (uid string, ok bool) {
+func (a *App) makeAttachment(name string, body []byte) (uid string, ok bool) {
 	// do not trust content-type
 	cfg, fmtString, err := image.DecodeConfig(bytes.NewReader(body))
 	if err != nil {
@@ -124,10 +123,10 @@ func makeAttachment(name string, body []byte) (uid string, ok bool) {
 
 	if format.MIMEType == "image/jpeg" {
 		if orient := getEXIFOrientation(bytes.NewReader(body)); orient != 0 && orient != 1 {
-			cmd := exec.Command(conf.GM,
+			cmd := exec.Command(a.GM,
 				"convert",
 				"-", // stdin
-				"-profile", conf.SRGB,
+				"-profile", a.SRGB,
 				"-auto-orient",
 				"-quality", "95",
 				"jpeg:-", // stdout
@@ -161,17 +160,17 @@ func makeAttachment(name string, body []byte) (uid string, ok bool) {
 		// Do resize
 		var cmd *exec.Cmd
 		if format.MIMEType != "image/gif" {
-			cmd = exec.Command(conf.GM,
+			cmd = exec.Command(a.GM,
 				"convert",
 				"-", // stdin
 				"-resize", fmt.Sprintf("%dx%d!", szEntry.Width, szEntry.Height),
-				"-profile", conf.SRGB,
+				"-profile", a.SRGB,
 				"-auto-orient",
 				"-quality", "95",
 				format.GMFormat+":-", // stdout
 			)
 		} else {
-			cmd = exec.Command(conf.GifSicle,
+			cmd = exec.Command(a.GifSicle,
 				"-resize", fmt.Sprintf("%dx%d", szEntry.Width, szEntry.Height),
 				"-O3",
 			)
@@ -184,21 +183,25 @@ func makeAttachment(name string, body []byte) (uid string, ok bool) {
 			errorLog.Printf("Cannot resize image: %s", err)
 			continue
 		}
+		if newBodyBuf.Len() == 0 {
+			errorLog.Printf("Cannot resize image: empty result")
+			continue
+		}
 		szEntry.Body = newBodyBuf.Bytes()
 		iSizes[szID] = szEntry
 	}
 
 	uid, ok = uuid.NewV4().String(), true
 
-	iSizes.setName(uid, format.Ext)
+	iSizes.setName(a.AttURL, uid, format.Ext)
 
 	// Upload all versions
 	for _, entry := range iSizes {
-		storeAttachment(entry.Body, entry.DirName+"/"+uid+"."+format.Ext, name, format.MIMEType)
+		a.storeAttachment(entry.Body, entry.DirName+"/"+uid+"."+format.Ext, name, format.MIMEType)
 	}
 
 	// Write to DB without post_id, user_id, created_at and updated_at
-	dbutils.MustInsert(tx, "attachments", dbutils.H{
+	dbutil.MustInsert(a.Tx, "attachments", dbutil.H{
 		"uid":            uid,
 		"file_name":      name,
 		"file_size":      len(body),
@@ -206,7 +209,7 @@ func makeAttachment(name string, body []byte) (uid string, ok bool) {
 		"media_type":     "image",
 		"file_extension": format.Ext,
 		"no_thumbnail":   len(iSizes) == 1,
-		"image_sizes":    dbutils.JSONVal(iSizes),
+		"image_sizes":    dbutil.JSONVal(iSizes),
 	})
 
 	return

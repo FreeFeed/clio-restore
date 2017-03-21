@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"database/sql"
 	"encoding/json"
 	"io/ioutil"
 
@@ -27,11 +26,4 @@ func readZipObject(file *zip.File, v interface{}) error {
 	}
 
 	return nil
-}
-
-// Commnon interface for sql.DB and sql.Tx
-type dbQ interface {
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-	QueryRow(query string, args ...interface{}) *sql.Row
-	Exec(query string, args ...interface{}) (sql.Result, error)
 }

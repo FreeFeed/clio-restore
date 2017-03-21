@@ -15,8 +15,9 @@ var (
 // Entry represents archived FriendFeed entry
 type Entry struct {
 	entryJSON
-	Author *account.Account
-	Links  []string
+	AuthorName string
+	Author     *account.Account
+	Links      []string
 }
 
 // UnmarshalJSON unmarshalls Entry from the archive
@@ -25,7 +26,7 @@ func (entry *Entry) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	entry.Body, entry.Links = deHTML(entry.Body)
-	entry.Author = account.Get(entry.entryJSON.Author.UserName)
+	entry.AuthorName = entry.entryJSON.Author.UserName
 
 	if twitterRe.MatchString(entry.Via.URL) {
 		// twitter is a special case
@@ -45,7 +46,8 @@ func (entry *Entry) UnmarshalJSON(data []byte) error {
 // Comment represents archived comment
 type Comment struct {
 	commentJSON
-	Author *account.Account
+	AuthorName string
+	Author     *account.Account
 }
 
 // UnmarshalJSON unmarshalls Comment from the archive
@@ -54,14 +56,15 @@ func (c *Comment) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	c.Body, _ = deHTML(c.Body)
-	c.Author = account.Get(c.commentJSON.Author.UserName)
+	c.AuthorName = c.commentJSON.Author.UserName
 	return nil
 }
 
 // Like represents archived like
 type Like struct {
 	likeJSON
-	Author *account.Account
+	AuthorName string
+	Author     *account.Account
 }
 
 // UnmarshalJSON unmarshalls Like from the archive
@@ -69,6 +72,6 @@ func (l *Like) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &l.likeJSON); err != nil {
 		return err
 	}
-	l.Author = account.Get(l.likeJSON.Author.UserName)
+	l.AuthorName = l.likeJSON.Author.UserName
 	return nil
 }

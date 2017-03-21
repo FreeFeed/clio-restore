@@ -13,18 +13,18 @@ import (
 	"github.com/davidmz/mustbe"
 )
 
-func storeAttachment(body []byte, path, name, contentType string) {
-	if conf.AttDir != "" {
+func (a *App) storeAttachment(body []byte, path, name, contentType string) {
+	if a.AttDir != "" {
 		// Save to disk
-		fileName := filepath.Join(conf.AttDir, path)
+		fileName := filepath.Join(a.AttDir, path)
 		mustbe.OK(os.MkdirAll(filepath.Dir(fileName), 0777))
 		mustbe.OK(ioutil.WriteFile(fileName, body, 0666))
 	} else {
 		// Upload to S3
-		mustbe.OKVal(s3Client.PutObject(
+		mustbe.OKVal(a.S3Client.PutObject(
 			new(s3.PutObjectInput).
 				SetBody(bytes.NewReader(body)).
-				SetBucket(conf.S3Bucket).
+				SetBucket(a.S3Bucket).
 				SetKey(path).
 				SetContentType(contentType).
 				SetContentLength(int64(len(body))).

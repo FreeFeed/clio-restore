@@ -27,20 +27,29 @@ type Account struct {
 	}
 }
 
-var (
-	db    *sql.DB
-	cache = make(map[string]*Account)
-)
+// IsExists returns true if account exists in new Freefeed
+func (a *Account) IsExists() bool {
+	return a.UID != ""
+}
 
-// SetDBConnection sets db connection for package
-func SetDBConnection(dbc *sql.DB) {
-	db = dbc
+// Store is a db fetcher and cache of accounts
+type Store struct {
+	db    *sql.DB
+	cache map[string]*Account
+}
+
+// NewStore returns a new Store instance
+func NewStore(db *sql.DB) *Store {
+	return &Store{
+		db:    db,
+		cache: make(map[string]*Account),
+	}
 }
 
 // Get returns Account by old user's username. Get always returns not-nil value
 // even if account does not exists in DB.
-func Get(oldUserName string) *Account {
-	if a, ok := cache[oldUserName]; ok {
+func (s *Store) Get(oldUserName string) *Account {
+	if a, ok := s.cache[oldUserName]; ok {
 		return a
 	}
 
@@ -48,7 +57,7 @@ func Get(oldUserName string) *Account {
 		OldUserName: oldUserName,
 	}
 
-	mustbe.OKOr(db.QueryRow(
+	mustbe.OKOr(s.db.QueryRow(
 		`select
 			u.username,
 			a.old_username,
@@ -81,6 +90,6 @@ func Get(oldUserName string) *Account {
 		&a.Feeds.Likes.ID, &a.Feeds.Likes.UID,
 	), sql.ErrNoRows)
 
-	cache[oldUserName] = a
+	s.cache[oldUserName] = a
 	return a
 }

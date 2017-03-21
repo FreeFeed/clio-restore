@@ -1,4 +1,4 @@
-package dbutils
+package dbutil
 
 // QuoteString quotes string value according to PostgreSQL rules
 // see https://www.postgresql.org/docs/current/static/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS

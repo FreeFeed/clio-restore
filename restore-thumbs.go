@@ -13,20 +13,12 @@ import (
 	"github.com/davidmz/mustbe"
 )
 
-type localImageFile struct {
+type localFile struct {
 	*zip.File
 	OrigName string
 }
 
-var (
-	ffMediaURLRe = regexp.MustCompile(`http://(?:(?:m\.)?friendfeed-media\.com|i\.friendfeed\.com)/([0-9a-f]+)`)
-
-	imgurRe          = regexp.MustCompile(`http://(?:i\.)?imgur\.com/(\w+?)s\.jpg`)
-	picasaImageRe    = regexp.MustCompile(`http://lh\d+\.ggpht\.com/`)
-	instagramImageRe = regexp.MustCompile(`http://distilleryimage\d+\.instagram\.com/`)
-)
-
-func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
+func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 	if len(entry.Thumbnails) == 0 {
 		return
 	}
@@ -52,7 +44,7 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 			for _, t := range entry.Thumbnails {
 				if ffMediaURLRe.MatchString(t.Link) {
 					// get local file
-					if uid, ok := createImageAttachment(t.Link); ok {
+					if uid, ok := a.createImageAttachment(t.Link); ok {
 						resUIDs = append(resUIDs, uid)
 					}
 				}
@@ -61,13 +53,13 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 				}
 				if strings.HasPrefix(t.URL, "http://twitpic.com/show/thumb/") {
 					url := strings.Replace(t.URL, "/thumb/", "/large/", 1)
-					if uid, ok := createImageAttachment(url); ok {
+					if uid, ok := a.createImageAttachment(url); ok {
 						resUIDs = append(resUIDs, uid)
 					}
 				}
 				if imgurRe.MatchString(t.URL) {
 					code := imgurRe.FindStringSubmatch(t.URL)[1]
-					if uid, ok := createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
+					if uid, ok := a.createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
 						resUIDs = append(resUIDs, uid)
 					}
 				}
@@ -103,7 +95,7 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 			// All links is the same
 			// Using local thumbnails
 			for _, t := range entry.Thumbnails {
-				if uid, ok := createImageAttachment(t.URL); ok {
+				if uid, ok := a.createImageAttachment(t.URL); ok {
 					resUIDs = append(resUIDs, uid)
 				}
 			}
@@ -139,7 +131,7 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 		for _, t := range entry.Thumbnails {
 			if strings.HasPrefix(t.URL, "http://img-fotki.yandex.ru/get/") && strings.HasPrefix(t.Link, "http://fotki.yandex.ru/users/") {
 				imgURL := t.URL[:len(t.URL)-1] + "orig"
-				if uid, ok := createImageAttachment(imgURL); ok {
+				if uid, ok := a.createImageAttachment(imgURL); ok {
 					resUIDs = append(resUIDs, uid)
 				}
 			}
@@ -153,7 +145,7 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 		for _, t := range entry.Thumbnails {
 			if picasaImageRe.MatchString(t.URL) && bodyLinks[t.Link] {
 				url := strings.Replace(t.URL, "/s144/", "/", 1)
-				if uid, ok := createImageAttachment(url); ok {
+				if uid, ok := a.createImageAttachment(url); ok {
 					resUIDs = append(resUIDs, uid)
 				}
 			}
@@ -207,23 +199,23 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 	for _, t := range entry.Thumbnails {
 		if ffMediaURLRe.MatchString(t.Link) {
 			// get local file
-			if uid, ok := createImageAttachment(t.Link); ok {
+			if uid, ok := a.createImageAttachment(t.Link); ok {
 				resUIDs = append(resUIDs, uid)
 			}
 		} else if strings.HasPrefix(t.Link, "http://friendfeed.com/e/") {
 			// do nothing
 		} else if strings.HasPrefix(t.URL, "http://twitpic.com/show/thumb/") {
 			url := strings.Replace(t.URL, "/thumb/", "/large/", 1)
-			if uid, ok := createImageAttachment(url); ok {
+			if uid, ok := a.createImageAttachment(url); ok {
 				resUIDs = append(resUIDs, uid)
 			}
 		} else if imgurRe.MatchString(t.URL) {
 			code := imgurRe.FindStringSubmatch(t.URL)[1]
-			if uid, ok := createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
+			if uid, ok := a.createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
 				resUIDs = append(resUIDs, uid)
 			}
 		} else {
-			if uid, ok := createImageAttachment(t.Link, t.URL); ok {
+			if uid, ok := a.createImageAttachment(t.Link, t.URL); ok {
 				resUIDs = append(resUIDs, uid)
 			}
 		}
@@ -232,8 +224,8 @@ func restoreThumbnails(entry *clio.Entry, db dbQ) (resUIDs []string) {
 	return
 }
 
-func readImageFiles(files []*zip.File) (out map[string]localImageFile) {
-	out = make(map[string]localImageFile)
+func (a *App) readImageFiles() {
+	a.ImageFiles = make(map[string]*localFile)
 	name2id := make(map[string]string) // file name -> file UID
 
 	var (
@@ -244,7 +236,7 @@ func readImageFiles(files []*zip.File) (out map[string]localImageFile) {
 	)
 
 	// Looking for the TSV file
-	for _, f := range files {
+	for _, f := range a.ZipFiles {
 		if tsvFileRe.MatchString(f.Name) {
 			r := mustbe.OKVal(f.Open()).(io.ReadCloser)
 			scanner := bufio.NewScanner(r)
@@ -264,16 +256,16 @@ func readImageFiles(files []*zip.File) (out map[string]localImageFile) {
 	}
 
 	// Now looking for images
-	for _, f := range files {
+	for _, f := range a.ZipFiles {
 		if imageFileRe.MatchString(f.Name) {
 			name := imageFileRe.FindStringSubmatch(f.Name)[1]
 			if id, ok := name2id[name]; ok {
-				out[id] = localImageFile{File: f, OrigName: name}
+				a.ImageFiles[id] = &localFile{File: f, OrigName: name}
 			}
 		}
 		if thumbFileRe.MatchString(f.Name) {
 			m := thumbFileRe.FindStringSubmatch(f.Name)
-			out[m[2]] = localImageFile{File: f, OrigName: m[1]}
+			a.ImageFiles[m[2]] = &localFile{File: f, OrigName: m[1]}
 		}
 	}
 
