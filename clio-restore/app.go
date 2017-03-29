@@ -28,6 +28,8 @@ type App struct {
 	ImageFiles     map[string]*localFile // map ID -> *zip.File
 	ViaToRestore   map[string]bool       // via sources (URLs) to restore
 	PostsToRestore int
+
+	mp3ZipReader *zip.ReadCloser
 }
 
 // Init initialises App by Config
@@ -38,11 +40,11 @@ func (a *App) Init(zipFiles []*zip.File, conf *Config) {
 
 	a.Mp3Files = make(map[string]*zip.File)
 	if a.MP3Zip != "" { // Open MP3 zip
-		mp3zip, err := zip.OpenReader(conf.MP3Zip)
+		var err error
+		a.mp3ZipReader, err = zip.OpenReader(conf.MP3Zip)
 		mustbe.OK(errors.Annotate(err, "cannot open MP3 archive file"))
-		defer mp3zip.Close()
 		mp3Re := regexp.MustCompile(`([0-9a-f]+)\.mp3$`)
-		for _, f := range mp3zip.File {
+		for _, f := range a.mp3ZipReader.File {
 			m := mp3Re.FindStringSubmatch(f.Name)
 			if m != nil {
 				a.Mp3Files[m[1]] = f
@@ -107,6 +109,13 @@ func (a *App) Init(zipFiles []*zip.File, conf *Config) {
 			}
 		}
 		infoLog.Printf("%s wants to restore %d posts of %d total", a.Owner.OldUserName, a.PostsToRestore, totalPosts)
+	}
+}
+
+// Close closes opened resources
+func (a *App) Close() {
+	if a.mp3ZipReader != nil {
+		a.mp3ZipReader.Close()
 	}
 }
 

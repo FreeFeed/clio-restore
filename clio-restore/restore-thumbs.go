@@ -214,6 +214,10 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 			if uid, ok := a.createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
 				resUIDs = append(resUIDs, uid)
 			}
+		} else if soupImageRe.MatchString(t.URL) {
+			if uid, ok := a.createImageAttachment(strings.Replace(t.URL, "_400.gif", ".gif", 1)); ok {
+				resUIDs = append(resUIDs, uid)
+			}
 		} else {
 			if uid, ok := a.createImageAttachment(t.Link, t.URL); ok {
 				resUIDs = append(resUIDs, uid)

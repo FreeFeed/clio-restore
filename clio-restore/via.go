@@ -23,7 +23,10 @@ func (a *App) getViaID(via clio.ViaJSON) int {
 	err := mustbe.OKOr(a.Tx.QueryRow(`select id from archive_via where url = $1`, via.URL).Scan(&id), sql.ErrNoRows)
 	if err != nil {
 		// row not found
-		mustbe.OK(a.Tx.QueryRow(`insert into archive_via (url, title) values ($1, $2)`, via.URL, via.Name).Scan(&id))
+		mustbe.OK(a.Tx.QueryRow(
+			`insert into archive_via (url, title) values ($1, $2) returning id`,
+			via.URL, via.Name,
+		).Scan(&id))
 	}
 
 	viaCache[via.URL] = id

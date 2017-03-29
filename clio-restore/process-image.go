@@ -171,7 +171,7 @@ func (a *App) makeAttachment(name string, body []byte) (uid string, ok bool) {
 			)
 		} else {
 			cmd = exec.Command(a.GifSicle,
-				"-resize", fmt.Sprintf("%dx%d", szEntry.Width, szEntry.Height),
+				"--resize", fmt.Sprintf("%dx%d", szEntry.Width, szEntry.Height),
 				"-O3",
 			)
 

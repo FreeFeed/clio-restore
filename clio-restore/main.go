@@ -69,6 +69,7 @@ func main() {
 
 	app := new(App)
 	app.Init(archZip.File, conf)
+	defer app.Close()
 
 	processedPosts := 0
 
