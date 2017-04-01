@@ -27,7 +27,14 @@ type Args []interface{}
 
 // Insert inserts given values into the given database table
 func Insert(db Execer, tableName string, vals H) (sql.Result, error) {
-	sql, params := insertSQL(tableName, vals)
+	sql, params := insertSQL(tableName, vals, "")
+	return db.Exec(sql, params...)
+}
+
+// InsertWithoutConflict inserts given values into the given database table
+// with 'on conflict do nothing'
+func InsertWithoutConflict(db Execer, tableName string, vals H) (sql.Result, error) {
+	sql, params := insertSQL(tableName, vals, "on conflict do nothing")
 	return db.Exec(sql, params...)
 }
 
@@ -37,13 +44,21 @@ func MustInsert(db Execer, tableName string, vals H) sql.Result {
 	return mustbe.OKVal(Insert(db, tableName, vals)).(sql.Result)
 }
 
-func insertSQL(tableName string, vals H) (query string, params []interface{}) {
+// MustInsertWithoutConflict inserts given values into the given database table
+// with 'on conflict do nothing'
+// and panics (in 'mustbe' way) if error
+func MustInsertWithoutConflict(db Execer, tableName string, vals H) sql.Result {
+	return mustbe.OKVal(InsertWithoutConflict(db, tableName, vals)).(sql.Result)
+}
+
+func insertSQL(tableName string, vals H, tail string) (query string, params []interface{}) {
 	names, placeholders, params := SQLizeParams(vals)
 	query = fmt.Sprintf(
-		"insert into %s (%s) values (%s)",
+		"insert into %s (%s) values (%s) %s",
 		pq.QuoteIdentifier(tableName),
 		names,
 		placeholders,
+		tail,
 	)
 	return
 }
