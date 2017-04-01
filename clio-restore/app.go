@@ -81,6 +81,19 @@ func (a *App) Init(zipFiles []*zip.File, conf *Config) {
 
 	infoLog.Printf("%s new username is %s", a.Owner.OldUserName, a.Owner.NewUserName)
 
+	{
+		var recStatus int
+		mustbe.OK(a.DB.QueryRow(
+			"select recovery_status from archives where user_id = $1", a.Owner.UID,
+		).Scan(&recStatus))
+		if recStatus == recoveryNotStarted {
+			mustbe.OK(errors.New("user wasn't allow to restore his archive"))
+		}
+		if recStatus == recoveryFinished {
+			mustbe.OK(errors.New("archive already restored"))
+		}
+	}
+
 	// posts statistics and sources
 	{
 		var (
@@ -134,4 +147,12 @@ func (a *App) getArchiveOwnerName() (string, error) {
 		}
 	}
 	return "", errors.New("cannot find feedinfo.js")
+}
+
+// FinishRestoration marks archive as restored
+func (a *App) FinishRestoration() {
+	mustbe.OKVal(a.DB.Exec(
+		"update archives set recovery_status = $1 where user_id = $2",
+		recoveryFinished, a.Owner.UID,
+	))
 }

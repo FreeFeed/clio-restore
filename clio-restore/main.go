@@ -100,4 +100,7 @@ func main() {
 
 		app.restoreEntry(entry)
 	}
+
+	// all done
+	app.FinishRestoration()
 }

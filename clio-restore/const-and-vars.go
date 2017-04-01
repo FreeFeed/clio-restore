@@ -6,6 +6,10 @@ const (
 	commentTypeVisible = 0
 	commentTypeHidden  = 3
 	hiddenCommentBody  = "Comment is in archive"
+
+	recoveryNotStarted = 0
+	recoveryStarted    = 1
+	recoveryFinished   = 2
 )
 
 type statType string
