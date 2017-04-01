@@ -194,17 +194,22 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 		}
 
 		for _, li := range likes {
-			dbutil.MustInsert(tx, "likes", dbutil.H{
+			// Probably this post alreaady have like from this user
+			// so we should use 'WithoutConflict'
+			res := dbutil.MustInsertWithoutConflict(tx, "likes", dbutil.H{
 				"post_id":    li.PostID,
 				"user_id":    acc.UID,
 				"created_at": li.Date,
 			})
+			rowsAffected := mustbe.OKVal(res.RowsAffected()).(int64)
 			mustbe.OKVal(tx.Exec("delete from hidden_likes where id = $1", li.ID))
-			mustbe.OKVal(tx.Exec(
-				"update posts set feed_ids = feed_ids | $1 where uid = $2",
-				feeds, li.PostID,
-			))
-			count++
+			if rowsAffected > 0 {
+				mustbe.OKVal(tx.Exec(
+					"update posts set feed_ids = feed_ids | $1 where uid = $2",
+					feeds, li.PostID,
+				))
+				count++
+			}
 		}
 	}
 
