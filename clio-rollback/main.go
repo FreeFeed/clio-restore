@@ -29,25 +29,36 @@ var (
 const dateFormat = "2006-01-02"
 
 func main() {
-	defer mustbe.Catched(func(err error) {
-		fatalLog.Println(err)
-		debug.PrintStack()
-	})
-
 	var (
 		dbStr         string
 		attDir        string
 		s3Bucket      string
 		cutDateString string
+		restoreStatus int
+		keepEntries   bool
+		printStack    bool
 	)
+
+	defer mustbe.Catched(func(err error) {
+		fatalLog.Println(err)
+		if printStack {
+			debug.PrintStack()
+		}
+	})
 
 	flag.StringVar(&dbStr, "db", "", "database connection string")
 	flag.StringVar(&attDir, "attdir", "", "directory to store attachments (S3 is not used if setted)")
 	flag.StringVar(&s3Bucket, "bucket", "", "S3 bucket name to store attachments (required if S3 is used)")
 	flag.StringVar(&cutDateString, "before", "2015-05-01", "delete records before this date")
+	flag.IntVar(&restoreStatus, "status", 1, "set 'recovery_status' to this value at the end (0, 1 and 2 are allowed)")
+	flag.BoolVar(&keepEntries, "keep", false, "keep all posts and files, just set status")
+	flag.BoolVar(&printStack, "debug", false, "print stacktrace on failure")
 	flag.Parse()
 
-	if dbStr == "" || (attDir == "" && s3Bucket == "") || flag.Arg(0) == "" {
+	if !keepEntries &&
+		(dbStr == "" || attDir == "" && s3Bucket == "") ||
+		flag.Arg(0) == "" ||
+		restoreStatus < 0 || restoreStatus > 2 {
 		fmt.Fprintln(os.Stderr, "Usage: clio-rollback [options] username")
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "")
@@ -58,23 +69,33 @@ func main() {
 	var (
 		username = flag.Arg(0)
 		cutDate  = mustbe.OKVal(time.Parse(dateFormat, cutDateString)).(time.Time)
-		db       = mustbe.OKVal(sql.Open("postgres", dbStr)).(*sql.DB)
+		db       *sql.DB
 		s3Client *s3.S3
+		userID   string
 	)
+
+	db = mustbe.OKVal(sql.Open("postgres", dbStr)).(*sql.DB)
 	mustbe.OK(db.Ping())
+
+	// Looking for userID
+	err := mustbe.OKOr(db.QueryRow("select uid from users where username = $1", username).Scan(&userID), sql.ErrNoRows)
+	if err != nil {
+		fatalLog.Fatalf("Cannot find user '%s'", username)
+	}
+
+	if keepEntries {
+		mustbe.OKVal(db.Exec(
+			"update archives set recovery_status = $1 where user_id = $2",
+			restoreStatus, userID,
+		))
+		infoLog.Printf("recovery_status resetted to %d", restoreStatus)
+		return
+	}
 
 	if s3Bucket != "" {
 		awsSession, err := session.NewSession()
 		mustbe.OK(errors.Annotate(err, "cannot create AWS session"))
 		s3Client = s3.New(awsSession)
-	}
-
-	// Looking for userID
-	var userID string
-
-	err := mustbe.OKOr(db.QueryRow("select uid from users where username = $1", username).Scan(&userID), sql.ErrNoRows)
-	if err != nil {
-		fatalLog.Fatalf("Cannot find user '%s'", username)
 	}
 
 	infoLog.Printf("Trying to delete all %s's posts and files created before %s", username, cutDate.Format(dateFormat))
@@ -186,6 +207,8 @@ func main() {
 
 	mustbe.OKVal(db.Exec(
 		"update archives set recovery_status = $1 where user_id = $2",
-		1, userID,
+		restoreStatus, userID,
 	))
+
+	infoLog.Printf("recovery_status resetted to %d", restoreStatus)
 }
