@@ -34,8 +34,9 @@ type entryJSON struct {
 	Author     UserJSON  `json:"from"`
 	Via        ViaJSON   `json:"via"` // always not nil but may have zero value
 	Thumbnails []*struct {
-		URL  string `json:"url"`
-		Link string `json:"link"`
+		URL    string  `json:"url"`
+		Link   string  `json:"link"`
+		Player *string `json:"player"`
 	} `json:"thumbnails"`
 	Files []*struct {
 		URL  string `json:"url"`

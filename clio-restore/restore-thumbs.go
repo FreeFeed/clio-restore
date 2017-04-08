@@ -48,7 +48,7 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 						resUIDs = append(resUIDs, uid)
 					}
 				}
-				if strings.HasPrefix(t.Link, "http://friendfeed.com/e/") {
+				if t.Player != nil {
 					// do nothing
 				}
 				if strings.HasPrefix(t.URL, "http://twitpic.com/show/thumb/") {
@@ -202,7 +202,7 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 			if uid, ok := a.createImageAttachment(t.Link); ok {
 				resUIDs = append(resUIDs, uid)
 			}
-		} else if strings.HasPrefix(t.Link, "http://friendfeed.com/e/") {
+		} else if t.Player != nil {
 			// do nothing
 		} else if strings.HasPrefix(t.URL, "http://twitpic.com/show/thumb/") {
 			url := strings.Replace(t.URL, "/thumb/", "/large/", 1)
