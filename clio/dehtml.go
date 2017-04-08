@@ -1,12 +1,12 @@
 package clio
 
 import (
+	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
-
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -42,7 +42,7 @@ func deHTML(text string) (result string, links []string) {
 				case "title":
 					aTitle = a.Val
 				case "href":
-					aHref = a.Val
+					aHref = unshorten(a.Val)
 				}
 			}
 
@@ -67,4 +67,17 @@ func deHTML(text string) (result string, links []string) {
 			}
 		}
 	}
+}
+
+func unshorten(u string) string {
+	isShort := strings.HasPrefix(u, "http://t.co/")
+	if !isShort {
+		return u
+	}
+	resp, err := http.Get(u) // not http.Head because of https://github.com/golang/go/issues/19895
+	if err != nil {
+		return u
+	}
+	resp.Body.Close()
+	return resp.Request.URL.String()
 }
