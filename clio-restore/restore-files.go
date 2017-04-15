@@ -5,8 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/FreeFeed/clio-restore/clio"
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/clio"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/ascherkus/go-id3/src/id3"
 	"github.com/davidmz/mustbe"
 	"github.com/satori/go.uuid"

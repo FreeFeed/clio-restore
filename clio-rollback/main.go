@@ -11,7 +11,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/config"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
@@ -30,41 +31,24 @@ const dateFormat = "2006-01-02"
 
 func main() {
 	var (
-		dbStr         string
-		attDir        string
-		s3Bucket      string
 		cutDateString string
-		restoreStatus int
-		keepEntries   bool
-		printStack    bool
 	)
 
 	defer mustbe.Catched(func(err error) {
 		fatalLog.Println(err)
-		if printStack {
-			debug.PrintStack()
-		}
+		debug.PrintStack()
 	})
 
-	flag.StringVar(&dbStr, "db", "", "database connection string")
-	flag.StringVar(&attDir, "attdir", "", "directory to store attachments (S3 is not used if setted)")
-	flag.StringVar(&s3Bucket, "bucket", "", "S3 bucket name to store attachments (required if S3 is used)")
 	flag.StringVar(&cutDateString, "before", "2015-05-01", "delete records before this date")
-	flag.IntVar(&restoreStatus, "status", 1, "set 'recovery_status' to this value at the end (0, 1 and 2 are allowed)")
-	flag.BoolVar(&keepEntries, "keep", false, "keep all posts and files, just set status")
-	flag.BoolVar(&printStack, "debug", false, "print stacktrace on failure")
 	flag.Parse()
 
-	if !keepEntries &&
-		(dbStr == "" || attDir == "" && s3Bucket == "") ||
-		flag.Arg(0) == "" ||
-		restoreStatus < 0 || restoreStatus > 2 {
+	if flag.Arg(0) == "" {
 		fmt.Fprintln(os.Stderr, "Usage: clio-rollback [options] username")
 		flag.PrintDefaults()
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Also you should set all variables required by AWS if '-bucket' is used.")
 		os.Exit(1)
 	}
+
+	conf := mustbe.OKVal(config.Load()).(*config.Config)
 
 	var (
 		username = flag.Arg(0)
@@ -74,7 +58,7 @@ func main() {
 		userID   string
 	)
 
-	db = mustbe.OKVal(sql.Open("postgres", dbStr)).(*sql.DB)
+	db = mustbe.OKVal(sql.Open("postgres", conf.DbStr)).(*sql.DB)
 	mustbe.OK(db.Ping())
 
 	// Looking for userID
@@ -83,16 +67,7 @@ func main() {
 		fatalLog.Fatalf("Cannot find user '%s'", username)
 	}
 
-	if keepEntries {
-		mustbe.OKVal(db.Exec(
-			"update archives set recovery_status = $1 where user_id = $2",
-			restoreStatus, userID,
-		))
-		infoLog.Printf("recovery_status resetted to %d", restoreStatus)
-		return
-	}
-
-	if s3Bucket != "" {
+	if conf.S3Bucket != "" {
 		awsSession, err := session.NewSession()
 		mustbe.OK(errors.Annotate(err, "cannot create AWS session"))
 		s3Client = s3.New(awsSession)
@@ -176,9 +151,9 @@ func main() {
 			fileNames = append(fileNames, path.Join("attachments", "thumbnails2", name))
 		}
 
-		if attDir != "" {
+		if conf.AttDir != "" {
 			for _, fileName := range fileNames {
-				if err := os.Remove(filepath.Join(attDir, fileName)); os.IsNotExist(err) {
+				if err := os.Remove(filepath.Join(conf.AttDir, fileName)); os.IsNotExist(err) {
 					errorLog.Println("File not found:", fileName)
 				} else {
 					mustbe.OK(err)
@@ -191,7 +166,7 @@ func main() {
 			}
 			mustbe.OKVal(s3Client.DeleteObjects(
 				new(s3.DeleteObjectsInput).
-					SetBucket(s3Bucket).
+					SetBucket(conf.S3Bucket).
 					SetDelete(del),
 			))
 		}
@@ -207,8 +182,8 @@ func main() {
 
 	mustbe.OKVal(db.Exec(
 		"update archives set recovery_status = $1 where user_id = $2",
-		restoreStatus, userID,
+		1, userID,
 	))
 
-	infoLog.Printf("recovery_status resetted to %d", restoreStatus)
+	infoLog.Printf("recovery_status resetted to %d", 1)
 }

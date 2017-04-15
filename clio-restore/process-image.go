@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/satori/go.uuid"
@@ -79,6 +79,7 @@ func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 	}
 
 	// Trying to Load remote image
+	infoLog.Println("Loading image:", URL)
 	resp, err := http.Get(URL)
 	if err != nil {
 		errorLog.Println("Cannot fetch URL", URL)

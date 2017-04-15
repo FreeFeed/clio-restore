@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/FreeFeed/clio-restore/account"
-	"github.com/FreeFeed/clio-restore/clio"
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/account"
+	"github.com/FreeFeed/clio-restore/internal/clio"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
 	"github.com/lib/pq"
 	"github.com/satori/go.uuid"
@@ -162,7 +162,7 @@ func (a *App) likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 
 func (a *App) commentPost(postUID string, postAuthor *account.Account, comment *clio.Comment) (restoredVisible bool) {
 	restoredVisible = comment.Author.RestoreCommentsAndLikes ||
-		comment.Author.OldUserName == postAuthor.OldUserName && comment.Author.RestoreSelfComments
+		comment.Author.OldUserName == postAuthor.OldUserName
 	if restoredVisible {
 		// comment is visible
 		dbutil.MustInsert(a.Tx, "comments", dbutil.H{

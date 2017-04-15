@@ -42,7 +42,7 @@ func deHTML(text string) (result string, links []string) {
 				case "title":
 					aTitle = a.Val
 				case "href":
-					aHref = unshorten(a.Val)
+					aHref = a.Val
 				}
 			}
 
@@ -62,8 +62,9 @@ func deHTML(text string) (result string, links []string) {
 				links = append(links, aTitle)
 				result += aTitle
 			} else {
-				links = append(links, aHref)
-				result += aHref
+				url := unshorten(aHref)
+				links = append(links, url)
+				result += url
 			}
 		}
 	}

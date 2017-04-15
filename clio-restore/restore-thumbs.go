@@ -9,7 +9,7 @@ import (
 
 	"strings"
 
-	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/FreeFeed/clio-restore/internal/clio"
 	"github.com/davidmz/mustbe"
 )
 

@@ -2,9 +2,10 @@ package clio
 
 import (
 	"encoding/json"
+	"html"
 	"regexp"
 
-	"github.com/FreeFeed/clio-restore/account"
+	"github.com/FreeFeed/clio-restore/internal/account"
 )
 
 var (
@@ -25,13 +26,11 @@ func (entry *Entry) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &entry.entryJSON); err != nil {
 		return err
 	}
-	entry.Body, entry.Links = deHTML(entry.Body)
 	entry.AuthorName = entry.entryJSON.Author.UserName
 
 	if twitterRe.MatchString(entry.Via.URL) {
 		// twitter is a special case
-		entry.Body = entry.Body + " - " + entry.Via.URL
-		entry.Links = append(entry.Links, entry.Via.URL)
+		entry.Body = entry.Body + ` - <a href="` + html.EscapeString(entry.Via.URL) + `">` + html.EscapeString(entry.Via.URL) + `</a>`
 		entry.Via.URL = twitterRe.FindStringSubmatch(entry.Via.URL)[1]
 	}
 
@@ -41,6 +40,22 @@ func (entry *Entry) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// Init initialize entry after unmarshalling
+func (entry *Entry) Init(accs *account.Store) {
+	entry.Body, entry.Links = deHTML(entry.Body)
+	for _, c := range entry.Comments {
+		c.Body, _ = deHTML(c.Body)
+	}
+
+	entry.Author = accs.Get(entry.AuthorName)
+	for _, c := range entry.Comments {
+		c.Author = accs.Get(c.AuthorName)
+	}
+	for _, l := range entry.Likes {
+		l.Author = accs.Get(l.AuthorName)
+	}
 }
 
 // Comment represents archived comment
@@ -55,7 +70,6 @@ func (c *Comment) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &c.commentJSON); err != nil {
 		return err
 	}
-	c.Body, _ = deHTML(c.Body)
 	c.AuthorName = c.commentJSON.Author.UserName
 	return nil
 }

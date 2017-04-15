@@ -2,28 +2,17 @@ package main
 
 import (
 	"archive/zip"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime/debug"
 
-	"github.com/FreeFeed/clio-restore/clio"
+	"github.com/FreeFeed/clio-restore/internal/clio"
+	"github.com/FreeFeed/clio-restore/internal/config"
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
-	"github.com/kelseyhightower/envconfig"
 )
-
-// Config holds program configuration taken from env. vars
-type Config struct {
-	DbStr    string `desc:"Database connection string" required:"true"`
-	GM       string `desc:"Path to the GraphicsMagick (gm) executable" required:"true"`
-	GifSicle string `desc:"Path to the gifsicle executable" required:"true"`
-	SRGB     string `desc:"Path to the sRGB ICM profile" required:"true"`
-	AttDir   string `desc:"Directory to store attachments (S3 is not used if setted)"`
-	S3Bucket string `desc:"S3 bucket name to store attachments (required if S3 is used)"`
-	MP3Zip   string `desc:"Path to the zip-archive with mp3 files"`
-	AttURL   string `desc:"Attachments root url" default:"https://media.freefeed.net"`
-}
 
 // Globals
 var (
@@ -38,29 +27,17 @@ func main() {
 		debug.PrintStack()
 	})
 
-	conf := new(Config)
+	flag.Parse()
 
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "Usage: clio-restore clio-archive.zip")
-		fmt.Fprintln(os.Stderr, "")
-		envconfig.Usage("frf", conf)
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Also you should set all variables required by AWS.")
+	if flag.Arg(0) == "" {
+		fmt.Fprintln(os.Stderr, "Usage: clio-restore [options] clio-archive.zip")
+		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	mustbe.OK(envconfig.Process("frf", conf))
+	conf := mustbe.OKVal(config.Load()).(*config.Config)
 
-	if conf.AttDir == "" && conf.S3Bucket == "" {
-		fmt.Fprintln(os.Stderr, "Usage: clio-restore clio-archive.zip")
-		fmt.Fprintln(os.Stderr, "")
-		envconfig.Usage("frf", conf)
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Also you should set all variables required by AWS.")
-		os.Exit(1)
-	}
-
-	archFile := os.Args[1]
+	archFile := flag.Arg(0)
 
 	// Open zip
 	archZip, err := zip.OpenReader(archFile)
@@ -86,19 +63,12 @@ func main() {
 			continue
 		}
 
-		entry.Author = app.Accounts.Get(entry.AuthorName)
-		for _, c := range entry.Comments {
-			c.Author = app.Accounts.Get(c.AuthorName)
-		}
-		for _, l := range entry.Likes {
-			l.Author = app.Accounts.Get(l.AuthorName)
-		}
+		entry.Init(app.Accounts)
+
+		infoLog.Printf("Processing entry %s [%d/%d]", entry.Name, processedPosts+1, app.PostsToRestore)
+		app.restoreEntry(entry)
 
 		processedPosts++
-
-		infoLog.Printf("Processing entry %s [%d/%d]", entry.Name, processedPosts, app.PostsToRestore)
-
-		app.restoreEntry(entry)
 	}
 
 	// all done

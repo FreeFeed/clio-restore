@@ -18,7 +18,6 @@ type Account struct {
 	UID                     string
 	HasArchive              bool
 	DisableComments         bool
-	RestoreSelfComments     bool
 	RestoreCommentsAndLikes bool
 	Feeds                   struct {
 		Posts    feedIDs
@@ -64,7 +63,6 @@ func (s *Store) Get(oldUserName string) *Account {
 			a.user_id,
 			a.has_archive,
 			a.disable_comments,
-			a.restore_self_comments,
 			a.restore_comments_and_likes,
 			pf.id, pf.uid,
 			cf.id, cf.uid,
@@ -83,7 +81,6 @@ func (s *Store) Get(oldUserName string) *Account {
 		&a.UID,
 		&a.HasArchive,
 		&a.DisableComments,
-		&a.RestoreSelfComments,
 		&a.RestoreCommentsAndLikes,
 		&a.Feeds.Posts.ID, &a.Feeds.Posts.UID,
 		&a.Feeds.Comments.ID, &a.Feeds.Comments.UID,

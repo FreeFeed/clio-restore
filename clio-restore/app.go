@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"regexp"
 
-	"github.com/FreeFeed/clio-restore/account"
-	"github.com/FreeFeed/clio-restore/clio"
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/account"
+	"github.com/FreeFeed/clio-restore/internal/clio"
+	"github.com/FreeFeed/clio-restore/internal/config"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
@@ -17,7 +18,7 @@ import (
 
 // App is a main application
 type App struct {
-	*Config
+	*config.Config
 	DB             *sql.DB
 	Tx             *sql.Tx
 	S3Client       *s3.S3
@@ -33,7 +34,7 @@ type App struct {
 }
 
 // Init initialises App by Config
-func (a *App) Init(zipFiles []*zip.File, conf *Config) {
+func (a *App) Init(zipFiles []*zip.File, conf *config.Config) {
 	a.Config = conf
 
 	a.ZipFiles = zipFiles

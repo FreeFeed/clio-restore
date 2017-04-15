@@ -9,8 +9,9 @@ import (
 
 	"time"
 
-	"github.com/FreeFeed/clio-restore/account"
-	"github.com/FreeFeed/clio-restore/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/account"
+	"github.com/FreeFeed/clio-restore/internal/config"
+	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
 	"github.com/lib/pq"
 )
@@ -28,16 +29,11 @@ func main() {
 		debug.PrintStack()
 	})
 
-	var dbStr string
-	flag.StringVar(&dbStr, "db", "", "database connection string")
 	flag.Parse()
 
-	if dbStr == "" {
-		flag.Usage()
-		os.Exit(1)
-	}
+	conf := mustbe.OKVal(config.Load()).(*config.Config)
 
-	db := mustbe.OKVal(sql.Open("postgres", dbStr)).(*sql.DB)
+	db := mustbe.OKVal(sql.Open("postgres", conf.DbStr)).(*sql.DB)
 	mustbe.OK(db.Ping())
 
 	accStore := account.NewStore(db)
