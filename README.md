@@ -27,8 +27,6 @@ Usage: `clio-restore-activities [-conf /path/to/clio.ini]`
 
 `clio-restore-activities` restores comments and likes of users who allow this after `clio-restore` run. It makes sense to run this program via cron once per hour or so.
 
-See https://godoc.org/github.com/lib/pq for the database connection string syntax.
-
 ## clio-rollback
 
 Usage: `clio-rollback [options] username`
