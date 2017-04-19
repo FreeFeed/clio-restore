@@ -93,7 +93,7 @@ func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 	}
 
 	ct := strings.Split(strings.ToLower(resp.Header.Get("Content-Type")), ";")[0]
-	if !(ct == "image/jpeg" || ct == "image/png" || ct == "image/gif") {
+	if !(ct == "image/jpeg" || ct == "image/jpg" || ct == "image/png" || ct == "image/gif") {
 		errorLog.Printf("Unsupported content type: %s (%s)", resp.Header.Get("Content-Type"), URL)
 		return
 	}
