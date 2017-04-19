@@ -1,7 +1,11 @@
 package clio
 
 import (
+	"io/ioutil"
+	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -70,12 +74,37 @@ func deHTML(text string) (result string, links []string) {
 	}
 }
 
+var shortDomains = []string{
+	"t.co",
+	"bit.ly",
+	"bitly.com",
+	"bitly.is",
+	"j.mp",
+	"goo.gl",
+	"tinyurl.com",
+	"ow.ly",
+}
+
 func unshorten(u string) string {
-	isShort := strings.HasPrefix(u, "http://t.co/")
+	pURL, err := url.Parse(u)
+	if err != nil {
+		return u
+	}
+	isShort := false
+	for _, domain := range shortDomains {
+		if pURL.Hostname() == domain {
+			isShort = true
+			break
+		}
+	}
 	if !isShort {
 		return u
 	}
-	resp, err := http.Get(u) // not http.Head because of https://github.com/golang/go/issues/19895
+
+	// turn off log because of https://github.com/golang/go/issues/19895
+	log.SetOutput(ioutil.Discard)
+	resp, err := http.Head(u)
+	log.SetOutput(os.Stderr)
 	if err != nil {
 		return u
 	}
