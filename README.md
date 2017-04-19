@@ -15,11 +15,19 @@ Also you should set all variables required by AWS for the _clio-restore_ and _cl
 
 ## clio-restore
 
-Usage: `clio-restore [-conf /path/to/clio.ini] clio-archive.zip`
+Usage: `clio-restore [options] clio-archive.zip`
+
+Options are:
+```
+  -conf string
+        path to ini file (default is PROGRAM_DIR/clio.ini)
+  -from-date string
+        restore entries created after this date (YYYY-MM-DD)
+  -to-date string
+        restore entries created before this date (YYYY-MM-DD)
+```
 
 `clio-restore` restores archive from `clio-archive.zip` according to archive owners's settings in `archive` database table.
-
-This program is configured via the environment. Call `clio-restore` without arguments to see all configuration options.
 
 ## clio-restore-activities
 

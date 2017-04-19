@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/FreeFeed/clio-restore/internal/clio"
 	"github.com/FreeFeed/clio-restore/internal/config"
@@ -27,12 +28,33 @@ func main() {
 		debug.PrintStack()
 	})
 
+	var (
+		fromDateStr string
+		toDateStr   string
+	)
+
+	flag.StringVar(&fromDateStr, "from-date", "", "restore entries created after this date (YYYY-MM-DD)")
+	flag.StringVar(&toDateStr, "to-date", "", "restore entries created before this date (YYYY-MM-DD)")
 	flag.Parse()
 
 	if flag.Arg(0) == "" {
 		fmt.Fprintln(os.Stderr, "Usage: clio-restore [options] clio-archive.zip")
 		flag.PrintDefaults()
 		os.Exit(1)
+	}
+
+	var (
+		fromDate time.Time
+		toDate   time.Time
+	)
+
+	const dateFormat = "2006-01-02"
+
+	if fromDateStr != "" {
+		fromDate = mustbe.OKVal(time.Parse(dateFormat, fromDateStr)).(time.Time)
+	}
+	if toDateStr != "" {
+		toDate = mustbe.OKVal(time.Parse(dateFormat, toDateStr)).(time.Time)
 	}
 
 	conf := mustbe.OKVal(config.Load()).(*config.Config)
@@ -58,8 +80,10 @@ func main() {
 		entry := new(clio.Entry)
 		mustbe.OK(errors.Annotate(readZipObject(file, entry), "error reading entry"))
 
-		if !app.ViaToRestore[entry.Via.URL] {
-			// via source not allowed, skipping
+		if !fromDate.IsZero() && entry.Date.Before(fromDate) || // entry was created before from-date
+			!toDate.IsZero() && entry.Date.After(toDate) || // entry was created after to-date
+			!app.ViaToRestore[entry.Via.URL] { // via source not allowed, skipping
+			//
 			continue
 		}
 
@@ -73,4 +97,5 @@ func main() {
 
 	// all done
 	app.FinishRestoration()
+	infoLog.Println("Done.")
 }
