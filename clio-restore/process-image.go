@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
@@ -91,7 +92,7 @@ func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 		return
 	}
 
-	ct := resp.Header.Get("Content-Type")
+	ct := strings.Split(strings.ToLower(resp.Header.Get("Content-Type")), ";")[0]
 	if !(ct == "image/jpeg" || ct == "image/png" || ct == "image/gif") {
 		errorLog.Printf("Unsupported content type: %s (%s)", resp.Header.Get("Content-Type"), URL)
 		return
