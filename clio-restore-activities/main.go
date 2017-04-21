@@ -6,12 +6,12 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
-
 	"time"
 
 	"github.com/FreeFeed/clio-restore/internal/account"
 	"github.com/FreeFeed/clio-restore/internal/config"
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/hashtags"
 	"github.com/davidmz/mustbe"
 	"github.com/lib/pq"
 )
@@ -132,6 +132,14 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 				ci.Body, acc.UID, 0, ci.ID,
 			))
 			mustbe.OKVal(tx.Exec("delete from hidden_comments where comment_id = $1", ci.ID))
+
+			for _, h := range hashtags.Extract(ci.Body) {
+				dbutil.MustInsertWithoutConflict(tx, "hashtag_usages", dbutil.H{
+					"hashtag_id": hashtags.GetID(tx, h),
+					"entity_id":  ci.ID,
+					"type":       "comment",
+				})
+			}
 
 			if !processedPosts[ci.PostID] {
 				mustbe.OKVal(tx.Exec(

@@ -102,6 +102,14 @@ func main() {
 						cs.Count, cs.UserID,
 					))
 				}
+
+				// remove hashtags
+				mustbe.OKVal(tx.Exec(
+					`delete from hashtag_usages where entity_id = $1 
+					or entity_id in (select uid from comments where post_id = $1)`,
+					postID,
+				))
+
 				mustbe.OKVal(tx.Exec("delete from comments where post_id = $1", postID))
 			}
 

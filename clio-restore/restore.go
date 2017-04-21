@@ -7,6 +7,7 @@ import (
 	"github.com/FreeFeed/clio-restore/internal/account"
 	"github.com/FreeFeed/clio-restore/internal/clio"
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
+	"github.com/FreeFeed/clio-restore/internal/hashtags"
 	"github.com/davidmz/mustbe"
 	"github.com/lib/pq"
 	"github.com/satori/go.uuid"
@@ -70,6 +71,15 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 	// register via
 	if viaID := a.getViaID(entry.Via); viaID != 0 {
 		dbutil.MustInsert(a.Tx, "archive_posts_via", dbutil.H{"via_id": viaID, "post_id": postUID})
+	}
+
+	// post hashtags
+	for _, h := range entry.Hashtags {
+		dbutil.MustInsertWithoutConflict(a.Tx, "hashtag_usages", dbutil.H{
+			"hashtag_id": hashtags.GetID(a.Tx, h),
+			"entity_id":  postUID,
+			"type":       "post",
+		})
 	}
 
 	// atach attachments
@@ -161,11 +171,13 @@ func (a *App) likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 }
 
 func (a *App) commentPost(postUID string, postAuthor *account.Account, comment *clio.Comment) (restoredVisible bool) {
+	commentID := uuid.NewV4().String()
 	restoredVisible = comment.Author.RestoreCommentsAndLikes ||
 		comment.Author.OldUserName == postAuthor.OldUserName
 	if restoredVisible {
 		// comment is visible
 		dbutil.MustInsert(a.Tx, "comments", dbutil.H{
+			"uid":        commentID,
 			"post_id":    postUID,
 			"body":       comment.Body,
 			"user_id":    comment.Author.UID,
@@ -173,9 +185,18 @@ func (a *App) commentPost(postUID string, postAuthor *account.Account, comment *
 			"updated_at": comment.Date,
 			"hide_type":  commentTypeVisible,
 		})
+
+		// comment hashtags
+		for _, h := range comment.Hashtags {
+			dbutil.MustInsertWithoutConflict(a.Tx, "hashtag_usages", dbutil.H{
+				"hashtag_id": hashtags.GetID(a.Tx, h),
+				"entity_id":  commentID,
+				"type":       "comment",
+			})
+		}
+
 	} else {
 		// comment is hidden
-		commentID := uuid.NewV4().String()
 		dbutil.MustInsert(a.Tx, "comments", dbutil.H{
 			"uid":        commentID,
 			"post_id":    postUID,

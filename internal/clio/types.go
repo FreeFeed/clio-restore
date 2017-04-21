@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/FreeFeed/clio-restore/internal/account"
+	"github.com/FreeFeed/clio-restore/internal/hashtags"
 )
 
 var (
@@ -19,6 +20,7 @@ type Entry struct {
 	AuthorName string
 	Author     *account.Account
 	Links      []string
+	Hashtags   []string
 }
 
 // UnmarshalJSON unmarshalls Entry from the archive
@@ -45,8 +47,10 @@ func (entry *Entry) UnmarshalJSON(data []byte) error {
 // Init initialize entry after unmarshalling
 func (entry *Entry) Init(accs *account.Store) {
 	entry.Body, entry.Links = deHTML(entry.Body)
+	entry.Hashtags = hashtags.Extract(entry.Body)
 	for _, c := range entry.Comments {
 		c.Body, _ = deHTML(c.Body)
+		c.Hashtags = hashtags.Extract(c.Body)
 	}
 
 	entry.Author = accs.Get(entry.AuthorName)
@@ -63,6 +67,7 @@ type Comment struct {
 	commentJSON
 	AuthorName string
 	Author     *account.Account
+	Hashtags   []string
 }
 
 // UnmarshalJSON unmarshalls Comment from the archive
