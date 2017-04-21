@@ -19,6 +19,11 @@ type Querier interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
+// QueryRower is the interface for QueryRow method
+type QueryRower interface {
+	QueryRow(query string, args ...interface{}) *sql.Row
+}
+
 // H is a general map string->any
 type H map[string]interface{}
 
