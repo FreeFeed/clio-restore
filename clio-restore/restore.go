@@ -66,7 +66,11 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 	infoLog.Println("created post with UID", postUID)
 
 	// register old post name
-	dbutil.MustInsert(a.Tx, "archive_post_names", dbutil.H{"old_post_name": entry.Name, "post_id": postUID})
+	dbutil.MustInsert(a.Tx, "archive_post_names", dbutil.H{
+		"post_id":       postUID,
+		"old_post_name": entry.Name,
+		"old_url":       entry.URL,
+	})
 
 	// register via
 	if viaID := a.getViaID(entry.Via); viaID != 0 {

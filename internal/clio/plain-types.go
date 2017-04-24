@@ -29,6 +29,7 @@ type ViaJSON struct {
 
 type entryJSON struct {
 	Name       string    `json:"name"`
+	URL        string    `json:"url"`
 	Date       time.Time `json:"date"`
 	Body       string    `json:"body"`
 	Author     UserJSON  `json:"from"`
