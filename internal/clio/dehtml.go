@@ -83,6 +83,7 @@ var shortDomains = []string{
 	"goo.gl",
 	"tinyurl.com",
 	"ow.ly",
+	"b23.ru",
 }
 
 func unshorten(u string) string {
@@ -101,9 +102,11 @@ func unshorten(u string) string {
 		return u
 	}
 
+	u1 := strings.Replace(u, "://b23.ru/", "://z23.ru/", 1)
+
 	// turn off log because of https://github.com/golang/go/issues/19895
 	log.SetOutput(ioutil.Discard)
-	resp, err := http.Head(u)
+	resp, err := http.Head(u1)
 	log.SetOutput(os.Stderr)
 	if err != nil {
 		return u
