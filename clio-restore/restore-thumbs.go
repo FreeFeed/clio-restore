@@ -91,17 +91,19 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 
 		if isSameURL && isLocalThumbs {
 			// All links is the same
-			// Using local thumbnails
-			for _, t := range entry.Thumbnails {
-				if uid, ok := a.createImageAttachment(t.URL); ok {
-					resUIDs = append(resUIDs, uid)
-				}
-			}
 			if !bodyLinks[entry.Thumbnails[0].Link] {
 				// Add link if body doesn't contan it
 				entry.Body += " - " + entry.Thumbnails[0].Link
 			}
-			return
+			if !instagramImageRe.MatchString(entry.Thumbnails[0].Link) {
+				// Use local thumbnails
+				for _, t := range entry.Thumbnails {
+					if uid, ok := a.createImageAttachment(t.URL); ok {
+						resUIDs = append(resUIDs, uid)
+					}
+				}
+				return
+			}
 		}
 	}
 
