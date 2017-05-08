@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"runtime/debug"
@@ -14,6 +15,7 @@ import (
 	"github.com/FreeFeed/clio-restore/internal/hashtags"
 	"github.com/davidmz/mustbe"
 	"github.com/lib/pq"
+	"gopkg.in/gomail.v2"
 )
 
 // Globals
@@ -81,6 +83,23 @@ func main() {
 				restoreLikes(tx, acc)
 			}
 		})
+
+		if conf.SMTPHost != "" {
+			dialer := gomail.NewDialer(conf.SMTPHost, conf.SMTPPort, conf.SMTPUsername, conf.SMTPPassword)
+			mail := gomail.NewMessage()
+			mail.SetHeader("From", conf.SMTPFrom)
+			mail.SetHeader("To", acc.Email, conf.SMTPBcc)
+			mail.SetHeader("Subject", "Archive comments restoration request")
+			mail.SetBody("text/plain",
+				fmt.Sprintf(
+					"Comments restoration for FreeFeed user %q (FriendFeed username %q) has been completed.",
+					acc.NewUserName, acc.OldUserName,
+				),
+			)
+			if err := dialer.DialAndSend(mail); err != nil {
+				errorLog.Printf("Cannot send email to %q: %v", acc.Email, err)
+			}
+		}
 	}
 }
 

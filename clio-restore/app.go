@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"database/sql"
+	"fmt"
 	"regexp"
 
 	"github.com/FreeFeed/clio-restore/internal/account"
@@ -14,6 +15,7 @@ import (
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
 	"github.com/lib/pq"
+	"gopkg.in/gomail.v2"
 )
 
 // App is a main application
@@ -156,4 +158,21 @@ func (a *App) FinishRestoration() {
 		"update archives set recovery_status = $1 where user_id = $2",
 		recoveryFinished, a.Owner.UID,
 	))
+
+	if a.SMTPHost != "" {
+		dialer := gomail.NewDialer(a.SMTPHost, a.SMTPPort, a.SMTPUsername, a.SMTPPassword)
+		mail := gomail.NewMessage()
+		mail.SetHeader("From", a.SMTPFrom)
+		mail.SetHeader("To", a.Owner.Email, a.SMTPBcc)
+		mail.SetHeader("Subject", "Archive posts restoration request")
+		mail.SetBody("text/plain",
+			fmt.Sprintf(
+				"Posts for FreeFeed user %q (FriendFeed username %q) have been restored from the archive.",
+				a.Owner.NewUserName, a.Owner.OldUserName,
+			),
+		)
+		if err := dialer.DialAndSend(mail); err != nil {
+			errorLog.Printf("Cannot send email to %q: %v", a.Owner.Email, err)
+		}
+	}
 }

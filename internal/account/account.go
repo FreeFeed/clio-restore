@@ -16,6 +16,7 @@ type Account struct {
 	OldUserName             string
 	NewUserName             string
 	UID                     string
+	Email                   string
 	HasArchive              bool
 	DisableComments         bool
 	RestoreCommentsAndLikes bool
@@ -61,6 +62,7 @@ func (s *Store) Get(oldUserName string) *Account {
 			u.username,
 			a.old_username,
 			a.user_id,
+			u.email,
 			a.has_archive,
 			a.disable_comments,
 			a.restore_comments_and_likes,
@@ -79,6 +81,7 @@ func (s *Store) Get(oldUserName string) *Account {
 		&a.NewUserName,
 		&a.OldUserName,
 		&a.UID,
+		&a.Email,
 		&a.HasArchive,
 		&a.DisableComments,
 		&a.RestoreCommentsAndLikes,
