@@ -29,12 +29,14 @@ func main() {
 	})
 
 	var (
-		fromDateStr string
-		toDateStr   string
+		fromDateStr   string
+		toDateStr     string
+		ignoreSources bool
 	)
 
 	flag.StringVar(&fromDateStr, "from-date", "", "restore entries created after this date (YYYY-MM-DD)")
 	flag.StringVar(&toDateStr, "to-date", "", "restore entries created before this date (YYYY-MM-DD)")
+	flag.BoolVar(&ignoreSources, "ignore-sources", false, "restore all entries regardless of the user's via-sources selection")
 	flag.Parse()
 
 	if flag.Arg(0) == "" {
@@ -82,7 +84,7 @@ func main() {
 
 		if !fromDate.IsZero() && entry.Date.Before(fromDate) || // entry was created before from-date
 			!toDate.IsZero() && entry.Date.After(toDate) || // entry was created after to-date
-			!app.ViaToRestore[entry.Via.URL] { // via source not allowed, skipping
+			!ignoreSources && !app.ViaToRestore[entry.Via.URL] { // via source not allowed, skipping
 			//
 			continue
 		}
