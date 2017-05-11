@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/davidmz/mustbe"
 	"github.com/juju/errors"
@@ -86,7 +87,12 @@ var shortDomains = []string{
 	"b23.ru",
 }
 
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
 func unshorten(u string) string {
+	log.Println("unshorten", u)
 	pURL, err := url.Parse(u)
 	if err != nil {
 		return u
@@ -106,7 +112,7 @@ func unshorten(u string) string {
 
 	// turn off log because of https://github.com/golang/go/issues/19895
 	log.SetOutput(ioutil.Discard)
-	resp, err := http.Head(u1)
+	resp, err := httpClient.Head(u1)
 	log.SetOutput(os.Stderr)
 	if err != nil {
 		return u

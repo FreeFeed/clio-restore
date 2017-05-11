@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
@@ -64,6 +65,10 @@ func (a *App) createImageAttachment(URLs ...string) (uid string, ok bool) {
 	return
 }
 
+var httpClient = &http.Client{
+	Timeout: 20 * time.Second,
+}
+
 func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 	if ffMediaURLRe.MatchString(URL) {
 		// Local image
@@ -81,7 +86,7 @@ func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 
 	// Trying to Load remote image
 	infoLog.Println("Loading image:", URL)
-	resp, err := http.Get(URL)
+	resp, err := httpClient.Get(URL)
 	if err != nil {
 		errorLog.Println("Cannot fetch URL", URL)
 		return
