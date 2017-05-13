@@ -200,6 +200,11 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 			if uid, ok := a.createImageAttachment(t.Link+":large", t.URL); ok {
 				resUIDs = append(resUIDs, uid)
 			}
+		} else if strings.HasPrefix(t.Link, "http://p.twimg.com/") {
+			url := "https://pbs.twimg.com/media/" + t.Link[len("http://p.twimg.com/"):] + ":large"
+			if uid, ok := a.createImageAttachment(url, t.URL); ok {
+				resUIDs = append(resUIDs, uid)
+			}
 		} else if imgurRe.MatchString(t.URL) {
 			code := imgurRe.FindStringSubmatch(t.URL)[1]
 			if uid, ok := a.createImageAttachment("http://i.imgur.com/" + code + ".jpg"); ok {
