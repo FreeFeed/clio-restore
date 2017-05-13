@@ -3,7 +3,10 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"encoding/xml"
 	"io"
+	"io/ioutil"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -107,25 +110,6 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 		}
 	}
 
-	// Flickr
-	{
-		isAllFlickr := true
-		isInBody := false
-		for _, t := range entry.Thumbnails {
-			if !strings.HasPrefix(t.Link, "http://www.flickr.com/photos/") {
-				isAllFlickr = false
-				break
-			}
-			if bodyLinks[t.Link] {
-				isInBody = true
-			}
-		}
-		if isAllFlickr && isInBody {
-			// do nothing
-			return
-		}
-	}
-
 	// fotki.yandex.ru
 	if strings.HasPrefix(entry.Via.URL, "http://fotki.yandex.ru/users/") {
 		for _, t := range entry.Thumbnails {
@@ -222,6 +206,17 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 			if uid, ok := a.createImageAttachment(strings.Replace(t.URL, "_400.gif", ".gif", 1)); ok {
 				resUIDs = append(resUIDs, uid)
 			}
+		} else if flickrImageRe.MatchString(t.URL) {
+			// see https://www.flickr.com/services/api/misc.urls.html
+			base := t.URL[:len(t.URL)-len("_s.jpg")] // cut "_s.jpg"
+			if uid, ok := a.createImageAttachment(base + "_b.jpg"); ok {
+				resUIDs = append(resUIDs, uid)
+			} else {
+				urls := getFlickrImageURLs(t.Link)
+				if uid, ok := a.createImageAttachment(urls...); ok {
+					resUIDs = append(resUIDs, uid)
+				}
+			}
 		} else {
 			if uid, ok := a.createImageAttachment(t.Link, t.URL); ok {
 				resUIDs = append(resUIDs, uid)
@@ -278,4 +273,37 @@ func (a *App) readImageFiles() {
 	}
 
 	return
+}
+
+func getFlickrImageURLs(pageURL string) []string {
+	oEmbedURL := "https://www.flickr.com/services/oembed?url=" + url.QueryEscape(pageURL)
+
+	resp, err := httpClient.Get(oEmbedURL)
+	if err != nil {
+		errorLog.Println("Cannot get Flickr oEmbed page:", err, oEmbedURL)
+		return nil
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		errorLog.Println("Cannot load Flickr oEmbed page:", err, oEmbedURL)
+		return nil
+	}
+
+	o := &struct {
+		URL string `xml:"url"`
+	}{}
+	if err := xml.Unmarshal(body, o); err != nil {
+		errorLog.Println("Cannot parse Flickr oEmbed page:", err, oEmbedURL)
+		return nil
+	}
+
+	imageURL := o.URL
+	const zTail = "_z.jpg?zz=1"
+	if strings.HasSuffix(imageURL, zTail) {
+		base := imageURL[:len(imageURL)-len(zTail)]
+		return []string{base + ".jpg"}
+	}
+
+	return []string{imageURL}
 }

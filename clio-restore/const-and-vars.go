@@ -29,6 +29,7 @@ var (
 	picasaImageRe    = regexp.MustCompile(`http://lh\d+\.ggpht\.com/`)
 	instagramImageRe = regexp.MustCompile(`http://[^/]+\.instagram\.com/`)
 	soupImageRe      = regexp.MustCompile(`http://asset-\w\.soup\.io\/asset\/`)
+	flickrImageRe    = regexp.MustCompile(`https?://[^/]+\.static\.?flickr\.com/.+_[a-z]\.jpg`)
 
 	fileIDRe = regexp.MustCompile(`[0-9a-f]+$`)
 )

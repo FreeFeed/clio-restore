@@ -59,6 +59,7 @@ func (a *App) createImageAttachment(URLs ...string) (uid string, ok bool) {
 	for _, u := range URLs {
 		uid, ok = a.processSingleImage(u)
 		if ok {
+			infoLog.Printf("Created image %s from URL %s", uid, u)
 			break
 		}
 	}
@@ -94,6 +95,11 @@ func (a *App) processSingleImage(URL string) (uid string, ok bool) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK { // redirects?
 		errorLog.Printf("Error fetching URL: %s (%s)", resp.Status, URL)
+		return
+	}
+	if flickrImageRe.MatchString(URL) && resp.Request.URL.Hostname() == "s.yimg.com" {
+		// flickr "image not found"
+		errorLog.Printf("Error fetching URL: flickr image not found (%s)", URL)
 		return
 	}
 
