@@ -92,7 +92,6 @@ var httpClient = &http.Client{
 }
 
 func unshorten(u string) string {
-	log.Println("unshorten", u)
 	pURL, err := url.Parse(u)
 	if err != nil {
 		return u
