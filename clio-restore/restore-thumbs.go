@@ -153,8 +153,11 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 
 		if instagramImageRe.MatchString(th.Link) {
 			for _, l := range entry.Links {
-				if strings.HasPrefix(l, "http://instagr.am/p/") || strings.HasPrefix(l, "http://instagram.com/p/") {
-					// do nothing
+				if m := instagramIDRe.FindStringSubmatch(l); m != nil {
+					bigImageURL := "https://instagram.com/p/" + m[1] + "/media/?size=l"
+					if uid, ok := a.createImageAttachment(bigImageURL, th.URL); ok {
+						resUIDs = append(resUIDs, uid)
+					}
 					return
 				}
 			}

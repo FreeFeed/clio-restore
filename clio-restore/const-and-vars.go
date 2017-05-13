@@ -31,5 +31,6 @@ var (
 	soupImageRe      = regexp.MustCompile(`http://asset-\w\.soup\.io\/asset\/`)
 	flickrImageRe    = regexp.MustCompile(`https?://[^/]+\.static\.?flickr\.com/.+_[a-z]\.jpg`)
 
-	fileIDRe = regexp.MustCompile(`[0-9a-f]+$`)
+	fileIDRe      = regexp.MustCompile(`[0-9a-f]+$`)
+	instagramIDRe = regexp.MustCompile(`http://(?:instagr\.am|instagram.com)/p/([^/]+)`)
 )
