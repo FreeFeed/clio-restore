@@ -57,6 +57,13 @@ func main() {
 	infoLog.Printf("Found %d users who allow to restore comments and likes", len(accounts))
 
 	for _, acc := range accounts {
+		infoLog.Printf("Processing %q (now %q)", acc.OldUserName, acc.NewUserName)
+
+		if !acc.IsExists() {
+			errorLog.Printf("Looks like account with old username %q doesn't exists", acc.OldUserName)
+			continue
+		}
+
 		var existsComments, existsLikes bool
 
 		mustbe.OK(db.QueryRow(
