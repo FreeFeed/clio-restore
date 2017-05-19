@@ -114,7 +114,7 @@ const batchSize = 100
 
 func restoreComments(tx *sql.Tx, acc *account.Account) {
 	var (
-		feeds pq.Int64Array
+		feeds = pq.Int64Array{}
 		count int
 	)
 	// Feeds to append commented post to
@@ -188,7 +188,7 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 
 func restoreLikes(tx *sql.Tx, acc *account.Account) {
 	var (
-		feeds pq.Int64Array
+		feeds = pq.Int64Array{}
 		count int
 	)
 	// Feeds to append liked post to
