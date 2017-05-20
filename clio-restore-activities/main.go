@@ -117,14 +117,17 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 		feeds pq.Int64Array
 		count int
 	)
-	// Feeds to append commented post to
+	// Feeds to append commented post to:
+	// 1) All 'RiverOfNews' feeds of users subscribed to comments feed
 	mustbe.OK(tx.QueryRow(
 		`select array_agg(distinct f.id) from
-				feeds f join subscriptions s on 
-					f.user_id = s.user_id and f.name = 'RiverOfNews' or f.uid = s.feed_id
-				where s.feed_id = $1`,
+			subscriptions s
+			join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
+			where s.feed_id = $1`,
 		acc.Feeds.Comments.UID,
 	).Scan(&feeds))
+	// 2) Comments feed itself
+	feeds = append(feeds, int64(acc.Feeds.Comments.ID))
 
 	processedPosts := make(map[string]bool) // postID is a key
 
@@ -168,12 +171,10 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 			}
 
 			if !processedPosts[ci.PostID] {
-				if len(feeds) != 0 {
-					mustbe.OKVal(tx.Exec(
-						"update posts set feed_ids = feed_ids | $1 where uid = $2",
-						feeds, ci.PostID,
-					))
-				}
+				mustbe.OKVal(tx.Exec(
+					"update posts set feed_ids = feed_ids | $1 where uid = $2",
+					feeds, ci.PostID,
+				))
 				processedPosts[ci.PostID] = true
 			}
 			count++
@@ -194,13 +195,16 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 		count int
 	)
 	// Feeds to append liked post to
+	// 1) All 'RiverOfNews' feeds of users subscribed to likes feed
 	mustbe.OK(tx.QueryRow(
 		`select array_agg(distinct f.id) from
-				feeds f join subscriptions s on 
-					f.user_id = s.user_id and f.name = 'RiverOfNews' or f.uid = s.feed_id
-				where s.feed_id = $1`,
+			subscriptions s
+			join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
+			where s.feed_id = $1`,
 		acc.Feeds.Likes.UID,
 	).Scan(&feeds))
+	// 2) Likes feed itself
+	feeds = append(feeds, int64(acc.Feeds.Likes.ID))
 
 	type likeInfo struct {
 		ID     int
@@ -236,12 +240,10 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 			rowsAffected := mustbe.OKVal(res.RowsAffected()).(int64)
 			mustbe.OKVal(tx.Exec("delete from hidden_likes where id = $1", li.ID))
 			if rowsAffected > 0 {
-				if len(feeds) != 0 {
-					mustbe.OKVal(tx.Exec(
-						"update posts set feed_ids = feed_ids | $1 where uid = $2",
-						feeds, li.PostID,
-					))
-				}
+				mustbe.OKVal(tx.Exec(
+					"update posts set feed_ids = feed_ids | $1 where uid = $2",
+					feeds, li.PostID,
+				))
 				count++
 			}
 		}
