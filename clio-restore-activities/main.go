@@ -114,7 +114,7 @@ const batchSize = 100
 
 func restoreComments(tx *sql.Tx, acc *account.Account) {
 	var (
-		feeds = pq.Int64Array{}
+		feeds pq.Int64Array
 		count int
 	)
 	// Feeds to append commented post to
@@ -167,7 +167,7 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 				})
 			}
 
-			if !processedPosts[ci.PostID] {
+			if !processedPosts[ci.PostID] && len(feeds) != 0 {
 				mustbe.OKVal(tx.Exec(
 					"update posts set feed_ids = feed_ids | $1 where uid = $2",
 					feeds, ci.PostID,
@@ -188,7 +188,7 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 
 func restoreLikes(tx *sql.Tx, acc *account.Account) {
 	var (
-		feeds = pq.Int64Array{}
+		feeds pq.Int64Array
 		count int
 	)
 	// Feeds to append liked post to
@@ -233,7 +233,7 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 			})
 			rowsAffected := mustbe.OKVal(res.RowsAffected()).(int64)
 			mustbe.OKVal(tx.Exec("delete from hidden_likes where id = $1", li.ID))
-			if rowsAffected > 0 {
+			if rowsAffected > 0 && len(feeds) != 0 {
 				mustbe.OKVal(tx.Exec(
 					"update posts set feed_ids = feed_ids | $1 where uid = $2",
 					feeds, li.PostID,
