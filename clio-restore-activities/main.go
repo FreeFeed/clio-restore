@@ -226,7 +226,7 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 		}
 
 		for _, li := range likes {
-			// Probably this post alreaady have like from this user
+			// Probably this post already have like from this user
 			// so we should use 'WithoutConflict'
 			res := dbutil.MustInsertWithoutConflict(tx, "likes", dbutil.H{
 				"post_id":    li.PostID,
