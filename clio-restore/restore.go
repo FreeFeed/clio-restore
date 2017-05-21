@@ -104,15 +104,15 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 
 	a.incrementUserStat(entry.Author, statPosts)
 
-	// post feed_ids - all UIDs of post's feeds
-	feedIds := make(map[string]bool)
-	feedIds[entry.Author.Feeds.Posts.UID] = true
+	// post feed_ids - all UIDs/IDs of post's feeds
+	feedIDs := make(map[string]int)
+	feedIDs[entry.Author.Feeds.Posts.UID] = entry.Author.Feeds.Posts.ID
 
 	// add comments
 	infoLog.Println("adding comments")
 	for _, c := range entry.Comments {
 		if a.commentPost(postUID, entry.Author, c) {
-			feedIds[c.Author.Feeds.Comments.UID] = true
+			feedIDs[c.Author.Feeds.Comments.UID] = c.Author.Feeds.Comments.ID
 			a.incrementUserStat(c.Author, statComments)
 		}
 	}
@@ -121,28 +121,33 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 	infoLog.Println("adding likes")
 	for _, l := range entry.Likes {
 		if a.likePost(postUID, l) {
-			feedIds[l.Author.Feeds.Likes.UID] = true
+			feedIDs[l.Author.Feeds.Likes.UID] = l.Author.Feeds.Likes.ID
 			a.incrementUserStat(l.Author, statLikes)
 		}
 	}
 
 	infoLog.Println("updating feed_ids")
 	{ // update post's feed_ids
-		var ids []string
-		for id := range feedIds {
-			ids = append(ids, dbutil.QuoteString(id))
+		var (
+			intIDs pq.Int64Array
+			UIDs   []string
+		)
+		for uid := range feedIDs {
+			UIDs = append(UIDs, dbutil.QuoteString(uid))
 		}
-		mustbe.OKVal(a.Tx.Exec(
-			`update posts set feed_ids = (
-				select array_agg(distinct f.id) from 
-					feeds f 
-					join subscriptions s on 
-						f.user_id = s.user_id and f.name = 'RiverOfNews'
-						or f.uid = s.feed_id
-				where s.feed_id in (`+strings.Join(ids, ",")+`)
-			) where uid = $1`,
-			postUID,
-		))
+		// 1) All 'RiverOfNews' feeds of users subscribed to activity feeds
+		mustbe.OK(a.Tx.QueryRow(
+			`select array_agg(distinct f.id) from
+				subscriptions s
+				join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
+				where s.feed_id in (` + strings.Join(UIDs, ",") + `)`,
+		).Scan(&intIDs))
+		// 2) Activity feeds itself
+		for _, intID := range feedIDs {
+			intIDs = append(intIDs, int64(intID))
+		}
+
+		mustbe.OKVal(a.Tx.Exec(`update posts set feed_ids = $1 where uid = $2`, intIDs, postUID))
 	}
 }
 
