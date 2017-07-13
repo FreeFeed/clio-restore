@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/davidmz/mustbe"
@@ -45,6 +46,8 @@ func contentDispositionString(disposition, name string) string {
 	fileNameASCII := nonASCIIRe.ReplaceAllString(name, "_")
 	// Modern browsers support UTF-8 filenames
 	fileNameUTF8 := url.QueryEscape(name)
+	// Go's QueryEscape replace spaces to '+', not '%20'
+	fileNameUTF8 = strings.Replace(fileNameUTF8, "+", "%20", -1)
 	// Inline version of 'attfnboth' method (http://greenbytes.de/tech/tc2231/#attfnboth)
 	return fmt.Sprintf(`%s; filename="%s"; filename*=utf-8''%s`, disposition, fileNameASCII, fileNameUTF8)
 }
