@@ -216,6 +216,7 @@ func (a *App) makeAttachment(name string, body []byte) (uid string, ok bool) {
 	// Write to DB without post_id, user_id, created_at and updated_at
 	dbutil.MustInsert(a.Tx, "attachments", dbutil.H{
 		"uid":            uid,
+		"ord":            a.AttOrd,
 		"file_name":      name,
 		"file_size":      len(body),
 		"mime_type":      format.MIMEType,
@@ -224,6 +225,7 @@ func (a *App) makeAttachment(name string, body []byte) (uid string, ok bool) {
 		"no_thumbnail":   len(iSizes) == 1,
 		"image_sizes":    dbutil.JSONVal(iSizes),
 	})
+	a.AttOrd++
 
 	return
 }

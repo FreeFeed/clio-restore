@@ -2,16 +2,12 @@ package main
 
 import (
 	"archive/zip"
-	"bufio"
 	"encoding/xml"
-	"io"
 	"io/ioutil"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/FreeFeed/clio-restore/internal/clio"
-	"github.com/davidmz/mustbe"
 )
 
 type localFile struct {
@@ -229,54 +225,6 @@ func (a *App) restoreThumbnails(entry *clio.Entry) (resUIDs []string) {
 			if uid, ok := a.createImageAttachment(t.Link, t.URL); ok {
 				resUIDs = append(resUIDs, uid)
 			}
-		}
-	}
-
-	return
-}
-
-func (a *App) readImageFiles() {
-	a.ImageFiles = make(map[string]*localFile)
-	name2id := make(map[string]string) // file name -> file UID
-
-	var (
-		tsvFileRe   = regexp.MustCompile(`^[a-z0-9-]+/_json/data/images\.tsv$`)
-		mediaURLRe  = regexp.MustCompile(`[0-9a-f]+$`)
-		imageFileRe = regexp.MustCompile(`^[a-z0-9-]+/images/media/([^/]+)$`)
-		thumbFileRe = regexp.MustCompile(`^[a-z0-9-]+/images/media/thumbnails/(([0-9a-f]+).+)`)
-	)
-
-	// Looking for the TSV file
-	for _, f := range a.ZipFiles {
-		if tsvFileRe.MatchString(f.Name) {
-			r := mustbe.OKVal(f.Open()).(io.ReadCloser)
-			scanner := bufio.NewScanner(r)
-			for scanner.Scan() {
-				parts := strings.SplitN(scanner.Text(), "\t", 2)
-				if len(parts) != 2 {
-					continue
-				}
-				m := mediaURLRe.FindStringSubmatch(parts[0])
-				if m == nil {
-					continue
-				}
-				name2id[parts[1]] = m[0]
-			}
-			r.Close()
-		}
-	}
-
-	// Now looking for images
-	for _, f := range a.ZipFiles {
-		if imageFileRe.MatchString(f.Name) {
-			name := imageFileRe.FindStringSubmatch(f.Name)[1]
-			if id, ok := name2id[name]; ok {
-				a.ImageFiles[id] = &localFile{File: f, OrigName: name}
-			}
-		}
-		if thumbFileRe.MatchString(f.Name) {
-			m := thumbFileRe.FindStringSubmatch(f.Name)
-			a.ImageFiles[m[2]] = &localFile{File: f, OrigName: m[1]}
 		}
 	}
 

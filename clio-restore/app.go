@@ -2,9 +2,13 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"database/sql"
 	"fmt"
+	"io"
+	"path"
 	"regexp"
+	"strings"
 
 	"github.com/FreeFeed/clio-restore/internal/account"
 	"github.com/FreeFeed/clio-restore/internal/clio"
@@ -21,16 +25,18 @@ import (
 // App is a main application
 type App struct {
 	*config.Config
-	DB             *sql.DB
-	Tx             *sql.Tx
-	S3Client       *s3.S3
-	Accounts       *account.Store
-	Owner          *account.Account
-	ZipFiles       []*zip.File
-	Mp3Files       map[string]*zip.File  // map ID -> *zip.File
+	DB       *sql.DB
+	Tx       *sql.Tx
+	S3Client *s3.S3
+	Accounts *account.Store
+	Owner    *account.Account
+	ZipFiles zipFilesList
+	// Mp3Files       map[string]*zip.File  // map ID -> *zip.File
 	ImageFiles     map[string]*localFile // map ID -> *zip.File
+	OtherFiles     map[string]*localFile // map ID -> *zip.File
 	ViaToRestore   map[string]bool       // via sources (URLs) to restore
 	PostsToRestore int
+	AttOrd int
 
 	mp3ZipReader *zip.ReadCloser
 }
@@ -41,7 +47,9 @@ func (a *App) Init(zipFiles []*zip.File, conf *config.Config) {
 
 	a.ZipFiles = zipFiles
 
-	a.Mp3Files = make(map[string]*zip.File)
+	a.readImageFiles()
+	a.readOtherFiles()
+
 	if a.MP3Zip != "" { // Open MP3 zip
 		var err error
 		a.mp3ZipReader, err = zip.OpenReader(conf.MP3Zip)
@@ -50,12 +58,12 @@ func (a *App) Init(zipFiles []*zip.File, conf *config.Config) {
 		for _, f := range a.mp3ZipReader.File {
 			m := mp3Re.FindStringSubmatch(f.Name)
 			if m != nil {
-				a.Mp3Files[m[1]] = f
+				if _, ok := a.OtherFiles[m[1]]; !ok {
+					a.OtherFiles[m[1]] = &localFile{File: f, OrigName: path.Base(f.Name)}
+				}
 			}
 		}
 	}
-
-	a.readImageFiles()
 
 	if a.AttDir == "" { // use S3
 		awsSession, err := session.NewSession()
@@ -137,17 +145,15 @@ func (a *App) Close() {
 
 func (a *App) getArchiveOwnerName() (string, error) {
 	// Looking for feedinfo.js in files
-	for _, f := range a.ZipFiles {
-		if feedInfoRe.MatchString(f.Name) {
-			user := new(clio.UserJSON)
-			if err := readZipObject(f, user); err != nil {
-				return "", err
-			}
-			if user.Type != "user" {
-				return "", errors.Errorf("@%s is not a user (%s)", user.UserName, user.Type)
-			}
-			return user.UserName, nil
+	if f, ok := a.ZipFiles.FindByRe(feedInfoRe); ok {
+		user := new(clio.UserJSON)
+		if err := readZipObject(f, user); err != nil {
+			return "", err
 		}
+		if user.Type != "user" {
+			return "", errors.Errorf("@%s is not a user (%s)", user.UserName, user.Type)
+		}
+		return user.UserName, nil
 	}
 	return "", errors.New("cannot find feedinfo.js")
 }
@@ -175,4 +181,91 @@ func (a *App) FinishRestoration() {
 			errorLog.Printf("Cannot send email to %q: %v", a.Owner.Email, err)
 		}
 	}
+}
+
+func (a *App) readImageFiles() {
+	a.ImageFiles = make(map[string]*localFile)
+	name2id := make(map[string]string) // file name -> file UID
+
+	var (
+		tsvFileRe   = regexp.MustCompile(`^[a-z0-9-]+/_json/data/images\.tsv$`)
+		mediaURLRe  = regexp.MustCompile(`[0-9a-f]+$`)
+		imageFileRe = regexp.MustCompile(`^[a-z0-9-]+/images/media/([^/]+)$`)
+		thumbFileRe = regexp.MustCompile(`^[a-z0-9-]+/images/media/thumbnails/(([0-9a-f]+).+)`)
+	)
+
+	// Looking for the TSV file
+	if f, ok := a.ZipFiles.FindByRe(tsvFileRe); ok {
+		r := mustbe.OKVal(f.Open()).(io.ReadCloser)
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			parts := strings.SplitN(scanner.Text(), "\t", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			m := mediaURLRe.FindStringSubmatch(parts[0])
+			if m == nil {
+				continue
+			}
+			name2id[parts[1]] = m[0]
+		}
+		r.Close()
+	}
+
+	// Now looking for images
+	for _, f := range a.ZipFiles {
+		if imageFileRe.MatchString(f.Name) {
+			name := imageFileRe.FindStringSubmatch(f.Name)[1]
+			if id, ok := name2id[name]; ok {
+				a.ImageFiles[id] = &localFile{File: f, OrigName: name}
+			}
+		}
+		if thumbFileRe.MatchString(f.Name) {
+			m := thumbFileRe.FindStringSubmatch(f.Name)
+			a.ImageFiles[m[2]] = &localFile{File: f, OrigName: m[1]}
+		}
+	}
+
+	return
+}
+
+func (a *App) readOtherFiles() {
+	a.OtherFiles = make(map[string]*localFile)
+	name2id := make(map[string]string) // file name -> file UID
+
+	var (
+		tsvFileRe   = regexp.MustCompile(`^[a-z0-9-]+/_json/data/files\.tsv$`)
+		mediaURLRe  = regexp.MustCompile(`[0-9a-f]+$`)
+		otherFileRe = regexp.MustCompile(`^[a-z0-9-]+/files/([^/]+)$`)
+	)
+
+	// Looking for the TSV file
+	if f, ok := a.ZipFiles.FindByRe(tsvFileRe); ok {
+		r := mustbe.OKVal(f.Open()).(io.ReadCloser)
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			parts := strings.SplitN(scanner.Text(), "\t", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			m := mediaURLRe.FindStringSubmatch(parts[0])
+			if m == nil {
+				continue
+			}
+			name2id[parts[1]] = m[0]
+		}
+		r.Close()
+	}
+
+	// Now looking for files
+	for _, f := range a.ZipFiles {
+		if otherFileRe.MatchString(f.Name) {
+			name := otherFileRe.FindStringSubmatch(f.Name)[1]
+			if id, ok := name2id[name]; ok {
+				a.OtherFiles[id] = &localFile{File: f, OrigName: name}
+			}
+		}
+	}
+
+	return
 }

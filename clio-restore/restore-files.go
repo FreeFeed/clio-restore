@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"io"
 	"io/ioutil"
 
@@ -12,48 +11,50 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-type audioFile struct {
-	zipFile *zip.File
-	Name    string
-	Size    int
-	Artist  string
-	Title   string
-}
-
 func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
-	var foundFiles []*audioFile
+	var foundFiles []*fileInfo
 	for _, f := range entry.Files {
-		if f.Type == "audio/mpeg" {
-			m := fileIDRe.FindStringSubmatch(f.URL)
-			if m != nil {
-				id := m[0]
-				if zf, ok := a.Mp3Files[id]; ok {
-					foundFiles = append(foundFiles, &audioFile{zipFile: zf, Name: f.Name})
-				}
-			}
+		m := fileIDRe.FindStringSubmatch(f.URL)
+		if m == nil { // no file ID
+			continue
 		}
+		id := m[0]
+		of, ok := a.OtherFiles[id]
+		if !ok { // file not found in local files
+			continue
+		}
+
+		foundFiles = append(foundFiles, &fileInfo{
+			zipFile:     of.File,
+			ContentType: f.Type,
+			Name:        f.Name,
+		})
 	}
 
 	for _, af := range foundFiles {
-		af.Size = int(af.zipFile.FileHeader.UncompressedSize64)
+		var (
+			title  string
+			artist string
+		)
+		if af.isMP3() {
+			// Read ID3 metadata
+			func() {
+				defer func() { recover() }() // due to issue https://github.com/ascherkus/go-id3/issues/1
+				r, err := af.zipFile.Open()
+				if err != nil {
+					return
+				}
+				defer r.Close()
 
-		// Read ID3 metadata
-		func() {
-			defer func() { recover() }() // due to issue https://github.com/ascherkus/go-id3/issues/1
-			r, err := af.zipFile.Open()
-			if err != nil {
-				return
-			}
-			defer r.Close()
+				meta := id3.Read(r)
+				if meta == nil {
+					return
+				}
 
-			meta := id3.Read(r)
-			if meta == nil {
-				return
-			}
-
-			af.Title = meta.Name
-			af.Artist = meta.Artist
-		}()
+				title = meta.Name
+				artist = meta.Artist
+			}()
+		}
 
 		attID := uuid.NewV4().String()
 
@@ -62,22 +63,24 @@ func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
 		r := mustbe.OKVal(af.zipFile.Open()).(io.ReadCloser)
 		body := mustbe.OKVal(ioutil.ReadAll(r)).([]byte)
 		r.Close()
-		a.storeAttachment(body, "attachments/"+attID+".mp3", af.Name, "audio/mpeg")
+		a.storeAttachment(body, "attachments/"+attID+af.dotExt(), af.Name, af.ContentType)
 
 		// Write to DB
 		dbutil.MustInsert(a.Tx, "attachments", dbutil.H{
 			"uid":            attID,
+			"ord":            a.AttOrd,
 			"created_at":     entry.Date,
 			"updated_at":     entry.Date,
 			"file_name":      af.Name,
-			"file_size":      af.Size,
-			"mime_type":      "audio/mpeg",
-			"media_type":     "audio",
-			"file_extension": "mp3",
+			"file_size":      af.size(),
+			"mime_type":      af.ContentType,
+			"media_type":     af.attachType(),
+			"file_extension": af.ext(),
 			"user_id":        entry.Author.UID,
-			"artist":         af.Artist,
-			"title":          af.Title,
+			"artist":         artist,
+			"title":          title,
 		})
+		a.AttOrd++
 
 		resUIDs = append(resUIDs, attID)
 	}
