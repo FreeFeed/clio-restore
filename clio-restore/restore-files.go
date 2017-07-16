@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"io/ioutil"
+	"strings"
 
 	"github.com/FreeFeed/clio-restore/internal/clio"
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
@@ -51,8 +52,8 @@ func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
 					return
 				}
 
-				title = meta.Name
-				artist = meta.Artist
+				title = strings.Replace(meta.Name, "\u0000", "", -1)
+				artist = strings.Replace(meta.Artist, "\u0000", "", -1)
 			}()
 		}
 
