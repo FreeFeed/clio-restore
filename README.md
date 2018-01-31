@@ -5,6 +5,7 @@ This command builds the following executables in `$GOPATH/bin`:
  * clio-restore
  * clio-restore-activities
  * clio-rollback
+ * clio-rollback-activities
  * clio-config
 
 All these programs read the common settings from the _clio.ini_ file (see example _clio.ini_ in this repository).
@@ -48,6 +49,22 @@ Options are:
 ```
 
 `clio-rollback` deletes any posts and files created by `username` before `-before` date. `username` is the username in Freefeed (new), not in Friendfeed (if there are difeerent).
+
+## clio-rollback-activities
+
+Usage: `clio-rollback-activities [options] username`
+
+Options are:
+```
+  -before string
+        delete records before this date (default "2015-05-01")
+  -from-own-posts
+        remove user's comments from their own posts (default false)
+  -conf string
+        path to ini file (default is PROGRAM_DIR/clio.ini)
+```
+
+`clio-rollback-activities` hides comments and likes created by `username` before `-before` date. `username` is the username in Freefeed (new), not in Friendfeed (if there are difeerent).
 
 ## clio-config
 
