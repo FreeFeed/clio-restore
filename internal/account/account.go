@@ -62,7 +62,7 @@ func (s *Store) Get(oldUserName string) *Account {
 			u.username,
 			a.old_username,
 			a.user_id,
-			u.email,
+			coalesce(u.email, ''),
 			a.has_archive,
 			a.disable_comments,
 			a.restore_comments_and_likes,
