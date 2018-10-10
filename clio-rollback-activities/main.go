@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/FreeFeed/clio-restore/internal/config"
@@ -176,78 +175,6 @@ func main() {
 		if (n+1)%100 == 0 {
 			infoLog.Printf("%d posts was processed", n+1)
 		}
-	}
-
-	////////
-	// RoN's
-	////////
-
-	infoLog.Printf("Updating affected post's RoN feeds")
-
-	affectedPostIDs = unique(affectedPostIDs)
-	const chunkSize = 100
-	for start := 0; start < len(affectedPostIDs); start += chunkSize {
-		end := start + chunkSize
-		if end > len(affectedPostIDs) {
-			end = len(affectedPostIDs)
-		}
-		postIDs := affectedPostIDs[start:end]
-		mustbe.OKVal(db.Exec(
-			`
-			with
-			--------------------------
-			-- all existing posts feeds except RiverOfNews'es 
-			--------------------------
-			postFeeds as ( 
-				select p.uid as post_id, f.* from 
-					posts p 
-					join feeds f on array[f.id] && p.feed_ids and f.name <> 'RiverOfNews' 
-				where p.uid in (` + strings.Join(dbutil.QuoteStrings(postIDs), ",") + `)
-			),
-			--------------------------
-			-- feeds that updates RiverOfNews'es 
-			--------------------------
-			srcFeeds as ( 
-				select f.* from 
-					postFeeds f
-					join posts p on p.uid = f.post_id
-				where f.name = any(
-					case when p.is_propagable then array['Posts', 'Directs', 'Likes', 'Comments'] 
-					else array['Posts', 'Directs'] 
-					end
-				)
-			),
-			--------------------------
-			-- new feed_ids for these post (as column of integers) 
-			--------------------------
-			resultingFeedIds as ( 
-				-- RoNs of users subscribed to post source feeds 
-				select f.post_id, r.id from 
-					srcFeeds f 
-					join subscriptions s on feed_id = f.uid 
-					join feeds r on r.user_id = s.user_id and r.name = 'RiverOfNews' 
-				union 
-				-- RoNs of users owned post source feeds 
-				select f.post_id, r.id from 
-					srcFeeds f 
-					join feeds r on r.user_id = f.user_id and r.name = 'RiverOfNews' 
-				union 
-				-- post feeds 
-				select post_id, id from postFeeds 
-			),
-			--------------------------
-			-- new feed_ids for these post (as integer[]) 
-			--------------------------
-			newFeedsIds as ( 
-				select post_id, array_agg(distinct id) as ids from resultingFeedIds group by post_id
-			) 
-			--------------------------
-			-- performing update 
-			--------------------------
-			update posts set feed_ids = f.ids from newFeedsIds f where f.post_id = uid
-			`,
-		))
-		infoLog.Printf("%d posts was processed", end)
 	}
 }
 

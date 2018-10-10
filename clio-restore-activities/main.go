@@ -118,15 +118,7 @@ func restoreComments(tx *sql.Tx, acc *account.Account) {
 		count int
 	)
 	// Feeds to append commented post to:
-	// 1) All 'RiverOfNews' feeds of users subscribed to comments feed
-	mustbe.OK(tx.QueryRow(
-		`select array_agg(distinct f.id) from
-			subscriptions s
-			join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
-			where s.feed_id = $1`,
-		acc.Feeds.Comments.UID,
-	).Scan(&feeds))
-	// 2) Comments feed itself
+	// Comments feed itself
 	feeds = append(feeds, int64(acc.Feeds.Comments.ID))
 
 	processedPosts := make(map[string]bool) // postID is a key
@@ -195,15 +187,7 @@ func restoreLikes(tx *sql.Tx, acc *account.Account) {
 		count int
 	)
 	// Feeds to append liked post to
-	// 1) All 'RiverOfNews' feeds of users subscribed to likes feed
-	mustbe.OK(tx.QueryRow(
-		`select array_agg(distinct f.id) from
-			subscriptions s
-			join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
-			where s.feed_id = $1`,
-		acc.Feeds.Likes.UID,
-	).Scan(&feeds))
-	// 2) Likes feed itself
+	// Likes feed itself
 	feeds = append(feeds, int64(acc.Feeds.Likes.ID))
 
 	type likeInfo struct {

@@ -135,14 +135,7 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 		for uid := range feedIDs {
 			UIDs = append(UIDs, dbutil.QuoteString(uid))
 		}
-		// 1) All 'RiverOfNews' feeds of users subscribed to activity feeds
-		mustbe.OK(a.Tx.QueryRow(
-			`select array_agg(distinct f.id) from
-				subscriptions s
-				join feeds f on f.user_id = s.user_id and f.name = 'RiverOfNews'
-				where s.feed_id in (` + strings.Join(UIDs, ",") + `)`,
-		).Scan(&intIDs))
-		// 2) Activity feeds itself
+		// Activity feeds itself
 		for _, intID := range feedIDs {
 			intIDs = append(intIDs, int64(intID))
 		}
