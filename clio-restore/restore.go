@@ -9,8 +9,8 @@ import (
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/FreeFeed/clio-restore/internal/hashtags"
 	"github.com/davidmz/mustbe"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
-	"github.com/satori/go.uuid"
 )
 
 func (a *App) restoreEntry(entry *clio.Entry) {
@@ -51,7 +51,7 @@ func (a *App) restoreEntry(entry *clio.Entry) {
 		}
 	}
 
-	postUID := uuid.NewV4().String()
+	postUID := mustbe.OKVal(uuid.NewV4()).(uuid.UUID).String()
 	dbutil.MustInsert(a.Tx, "posts", dbutil.H{
 		"uid":                  postUID,
 		"body":                 entry.Body,
@@ -180,7 +180,7 @@ func (a *App) likePost(postUID string, like *clio.Like) (restoredVisible bool) {
 }
 
 func (a *App) commentPost(postUID string, postAuthor *account.Account, comment *clio.Comment) (restoredVisible bool) {
-	commentID := uuid.NewV4().String()
+	commentID := mustbe.OKVal(uuid.NewV4()).(uuid.UUID).String()
 	restoredVisible = comment.Author.RestoreCommentsAndLikes ||
 		comment.Author.OldUserName == postAuthor.OldUserName
 	if restoredVisible {

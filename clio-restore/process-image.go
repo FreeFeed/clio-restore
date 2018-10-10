@@ -17,8 +17,8 @@ import (
 
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/davidmz/mustbe"
+	"github.com/gofrs/uuid"
 	"github.com/rwcarlsen/goexif/exif"
-	"github.com/satori/go.uuid"
 )
 
 type imageSizes map[string]imageSizesEntry
@@ -204,7 +204,7 @@ func (a *App) makeAttachment(name string, body []byte) (uid string, ok bool) {
 		iSizes[szID] = szEntry
 	}
 
-	uid, ok = uuid.NewV4().String(), true
+	uid, ok = mustbe.OKVal(uuid.NewV4()).(uuid.UUID).String(), true
 
 	iSizes.setName(a.AttURL, uid, format.Ext)
 

@@ -9,7 +9,7 @@ import (
 	"github.com/FreeFeed/clio-restore/internal/dbutil"
 	"github.com/ascherkus/go-id3/src/id3"
 	"github.com/davidmz/mustbe"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 )
 
 func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
@@ -57,7 +57,7 @@ func (a *App) restoreFiles(entry *clio.Entry) (resUIDs []string) {
 			}()
 		}
 
-		attID := uuid.NewV4().String()
+		attID := mustbe.OKVal(uuid.NewV4()).(uuid.UUID).String()
 
 		// We must read file into memory because AWS required io.ReadSeeker
 		// and zipFile.Open returns io.ReadCloser
